@@ -1,236 +1,450 @@
 import requests
 import sys
 import json
-import io
 import pandas as pd
 from datetime import datetime
+from io import BytesIO
 
-class LostFoundAPITester:
+class StudentDatabaseTester:
     def __init__(self, base_url="https://lostfound-fix.preview.emergentagent.com/api"):
         self.base_url = base_url
         self.admin_token = None
-        self.student_token = None
         self.tests_run = 0
         self.tests_passed = 0
+        self.failed_tests = []
 
-    def run_test(self, name, method, endpoint, expected_status, data=None, files=None, headers=None):
-        """Run a single API test"""
+    def log_result(self, test_name, success, details=""):
+        """Log test result"""
+        self.tests_run += 1
+        if success:
+            self.tests_passed += 1
+            print(f"✅ {test_name} - PASSED")
+        else:
+            self.failed_tests.append(f"{test_name}: {details}")
+            print(f"❌ {test_name} - FAILED: {details}")
+        if details:
+            print(f"   Details: {details}")
+
+    def make_request(self, method, endpoint, data=None, files=None, headers=None):
+        """Make HTTP request with error handling"""
         url = f"{self.base_url}/{endpoint}"
-        test_headers = {'Content-Type': 'application/json'}
+        default_headers = {'Content-Type': 'application/json'}
+        
+        if self.admin_token:
+            default_headers['Authorization'] = f'Bearer {self.admin_token}'
         
         if headers:
-            test_headers.update(headers)
+            default_headers.update(headers)
         
-        if self.admin_token and not headers:
-            test_headers['Authorization'] = f'Bearer {self.admin_token}'
-
-        self.tests_run += 1
-        print(f"\n🔍 Testing {name}...")
-        print(f"   URL: {url}")
+        # Remove Content-Type for file uploads
+        if files:
+            default_headers.pop('Content-Type', None)
         
         try:
             if method == 'GET':
-                response = requests.get(url, headers=test_headers)
+                response = requests.get(url, headers=default_headers)
             elif method == 'POST':
                 if files:
-                    # Remove Content-Type for file uploads
-                    if 'Content-Type' in test_headers:
-                        del test_headers['Content-Type']
-                    response = requests.post(url, data=data, files=files, headers=test_headers)
+                    response = requests.post(url, files=files, headers=default_headers)
                 else:
-                    response = requests.post(url, json=data, headers=test_headers)
+                    response = requests.post(url, json=data, headers=default_headers)
             elif method == 'DELETE':
-                response = requests.delete(url, json=data, headers=test_headers)
-
-            success = response.status_code == expected_status
-            if success:
-                self.tests_passed += 1
-                print(f"✅ Passed - Status: {response.status_code}")
-                try:
-                    return success, response.json()
-                except:
-                    return success, {}
-            else:
-                print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
-                try:
-                    error_detail = response.json()
-                    print(f"   Error: {error_detail}")
-                except:
-                    print(f"   Error: {response.text}")
-                return False, {}
-
+                response = requests.delete(url, headers=default_headers)
+            
+            return response
         except Exception as e:
-            print(f"❌ Failed - Error: {str(e)}")
-            return False, {}
-
-    def test_health_check(self):
-        """Test API health"""
-        return self.run_test("Health Check", "GET", "", 200)
+            print(f"Request error: {str(e)}")
+            return None
 
     def test_admin_login(self):
-        """Test admin login"""
-        success, response = self.run_test(
-            "Admin Login",
-            "POST",
-            "auth/admin/login",
-            200,
-            data={"username": "superadmin", "password": "SuperAdmin@123"},
-            headers={'Content-Type': 'application/json'}
-        )
-        if success and 'token' in response:
-            self.admin_token = response['token']
-            print(f"   Admin token obtained: {self.admin_token[:20]}...")
+        """Test admin login to get authentication token"""
+        print("\n🔐 Testing Admin Login...")
+        
+        response = self.make_request('POST', 'auth/admin/login', {
+            "username": "superadmin",
+            "password": "SuperAdmin@123"
+        })
+        
+        if response and response.status_code == 200:
+            data = response.json()
+            self.admin_token = data.get('token')
+            self.log_result("Admin Login", True, f"Token obtained, Role: {data.get('role')}")
             return True
-        return False
+        else:
+            error_msg = response.json().get('detail', 'Unknown error') if response else 'No response'
+            self.log_result("Admin Login", False, f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
+            return False
 
-    def test_student_login(self):
-        """Test student login"""
-        success, response = self.run_test(
-            "Student Login",
-            "POST",
-            "auth/student/login",
-            200,
-            data={"roll_number": "CS002", "dob": "2002-08-20"},
-            headers={'Content-Type': 'application/json'}
-        )
-        if success and 'token' in response:
-            self.student_token = response['token']
-            print(f"   Student token obtained: {self.student_token[:20]}...")
+    def test_student_login_valid_format(self):
+        """Test 1.1: Valid login with DD-MM-YYYY format"""
+        print("\n👨‍🎓 Testing Student Login - Valid DD-MM-YYYY Format...")
+        
+        response = self.make_request('POST', 'auth/student/login', {
+            "roll_number": "112723205028",
+            "dob": "17-04-2006"
+        })
+        
+        if response and response.status_code == 200:
+            data = response.json()
+            has_token = 'token' in data
+            has_user = 'user' in data
+            correct_role = data.get('role') == 'student'
+            self.log_result("Student Login (Valid DD-MM-YYYY)", 
+                          has_token and has_user and correct_role,
+                          f"Token: {has_token}, User: {has_user}, Role: {data.get('role')}")
             return True
-        return False
+        else:
+            error_msg = response.json().get('detail', 'Unknown error') if response else 'No response'
+            self.log_result("Student Login (Valid DD-MM-YYYY)", False, 
+                          f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
+            return False
 
-    def test_get_students(self):
-        """Test getting students list"""
-        success, response = self.run_test(
-            "Get Students List",
-            "GET",
-            "students",
-            200
-        )
-        if success:
-            print(f"   Found {len(response)} students")
-            for student in response[:3]:  # Show first 3
-                print(f"   - {student.get('roll_number')}: {student.get('full_name')}")
-        return success, response
+    def test_student_login_wrong_format(self):
+        """Test 1.2: Login with wrong DOB format (YYYY-MM-DD)"""
+        print("\n❌ Testing Student Login - Wrong Format (YYYY-MM-DD)...")
+        
+        response = self.make_request('POST', 'auth/student/login', {
+            "roll_number": "112723205028",
+            "dob": "2006-04-17"  # Wrong format
+        })
+        
+        expected_error = response and response.status_code == 401
+        error_msg = response.json().get('detail', '') if response else ''
+        is_invalid_creds = 'Invalid credentials' in error_msg
+        
+        self.log_result("Student Login (Wrong Format Rejection)", 
+                      expected_error and is_invalid_creds,
+                      f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
 
-    def test_excel_upload(self):
-        """Test Excel upload functionality"""
-        # Create test Excel file
-        test_data = {
-            'Roll Number': ['CS002', 'CS006', 'CS007'],  # CS002 is duplicate
-            'Full Name': ['Jane Smith', 'New Student 1', 'New Student 2'],
-            'Department': ['Computer Science', 'Computer Science', 'Electronics'],
-            'Year': ['2', '1', '3'],
-            'DOB': ['2002-08-20', '2003-05-15', '2001-12-10'],
-            'Email': ['jane@example.com', 'new1@example.com', 'new2@example.com'],
-            'Phone Number': ['9876543210', '9876543211', '9876543212']
-        }
+    def test_student_login_deleted_user(self):
+        """Test 1.3: Login with deleted student"""
+        print("\n🚫 Testing Student Login - Deleted Student...")
         
-        df = pd.DataFrame(test_data)
-        excel_buffer = io.BytesIO()
-        df.to_excel(excel_buffer, index=False)
-        excel_buffer.seek(0)
+        response = self.make_request('POST', 'auth/student/login', {
+            "roll_number": "112723205013",
+            "dob": "20-04-2006"
+        })
         
-        files = {'file': ('test_students.xlsx', excel_buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}
+        expected_error = response and response.status_code == 401
+        error_msg = response.json().get('detail', '') if response else ''
+        is_invalid_creds = 'Invalid credentials' in error_msg
         
-        success, response = self.run_test(
-            "Excel Upload",
-            "POST",
-            "students/upload-excel",
-            200,
-            files=files
-        )
-        
-        if success:
-            print(f"   Added: {response.get('added', 0)}")
-            print(f"   Skipped: {response.get('skipped', 0)}")
-            print(f"   Message: {response.get('message', '')}")
-        
-        return success, response
+        self.log_result("Student Login (Deleted User Rejection)", 
+                      expected_error and is_invalid_creds,
+                      f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
 
-    def test_delete_student(self):
-        """Test deleting a student"""
-        # First get students to find CS006 or CS007
-        success, students = self.test_get_students()
-        if not success:
+    def test_student_login_wrong_dob(self):
+        """Test 1.4: Login with wrong DOB"""
+        print("\n🔒 Testing Student Login - Wrong DOB...")
+        
+        response = self.make_request('POST', 'auth/student/login', {
+            "roll_number": "112723205028",
+            "dob": "18-04-2006"  # Wrong date
+        })
+        
+        expected_error = response and response.status_code == 401
+        error_msg = response.json().get('detail', '') if response else ''
+        is_invalid_creds = 'Invalid credentials' in error_msg
+        
+        self.log_result("Student Login (Wrong DOB Rejection)", 
+                      expected_error and is_invalid_creds,
+                      f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
+
+    def create_test_excel(self, filename, data):
+        """Create test Excel file"""
+        df = pd.DataFrame(data)
+        buffer = BytesIO()
+        df.to_excel(buffer, index=False)
+        buffer.seek(0)
+        return buffer
+
+    def test_excel_upload_valid(self):
+        """Test 2.1: Upload valid Excel file"""
+        print("\n📊 Testing Excel Upload - Valid File...")
+        
+        test_data = [
+            {
+                "Roll Number": "112723205030",
+                "Full Name": "TestUser1",
+                "Department": "CS",
+                "Year": "2",
+                "DOB": "10-01-2005",
+                "Email": "test1@spcet.ac.in",
+                "Phone Number": "9999999991"
+            },
+            {
+                "Roll Number": "112723205031",
+                "Full Name": "TestUser2",
+                "Department": "ECE",
+                "Year": "1",
+                "DOB": "11-02-2006",
+                "Email": "test2@spcet.ac.in",
+                "Phone Number": "9999999992"
+            }
+        ]
+        
+        excel_buffer = self.create_test_excel("test_students.xlsx", test_data)
+        
+        response = self.make_request('POST', 'students/upload-excel', 
+                                   files={'file': ('test_students.xlsx', excel_buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+        
+        if response and response.status_code == 200:
+            data = response.json()
+            added = data.get('added', 0)
+            skipped = data.get('skipped', 0)
+            success = added >= 1  # At least one should be added
+            self.log_result("Excel Upload (Valid File)", success,
+                          f"Added: {added}, Skipped: {skipped}, Message: {data.get('message', '')}")
+            return True
+        else:
+            error_msg = response.json().get('detail', 'Unknown error') if response else 'No response'
+            self.log_result("Excel Upload (Valid File)", False,
+                          f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
+            return False
+
+    def test_excel_upload_duplicates(self):
+        """Test 2.2: Upload with duplicates"""
+        print("\n🔄 Testing Excel Upload - Duplicates...")
+        
+        # Try to upload existing student
+        test_data = [
+            {
+                "Roll Number": "112723205028",  # Existing student
+                "Full Name": "Sam",
+                "Department": "CS",
+                "Year": "2",
+                "DOB": "17-04-2006",
+                "Email": "sam@spcet.ac.in",
+                "Phone Number": "9999999999"
+            }
+        ]
+        
+        excel_buffer = self.create_test_excel("duplicate_test.xlsx", test_data)
+        
+        response = self.make_request('POST', 'students/upload-excel',
+                                   files={'file': ('duplicate_test.xlsx', excel_buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+        
+        if response and response.status_code == 200:
+            data = response.json()
+            added = data.get('added', 0)
+            skipped = data.get('skipped', 0)
+            success = skipped >= 1 and added == 0  # Should skip existing
+            self.log_result("Excel Upload (Duplicate Handling)", success,
+                          f"Added: {added}, Skipped: {skipped}, Message: {data.get('message', '')}")
+        else:
+            error_msg = response.json().get('detail', 'Unknown error') if response else 'No response'
+            self.log_result("Excel Upload (Duplicate Handling)", False,
+                          f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
+
+    def test_excel_upload_missing_columns(self):
+        """Test 2.3: Upload with missing required columns"""
+        print("\n⚠️ Testing Excel Upload - Missing Columns...")
+        
+        # Missing Email column
+        test_data = [
+            {
+                "Roll Number": "112723205032",
+                "Full Name": "TestUser3",
+                "Department": "CS",
+                "Year": "2",
+                "DOB": "10-01-2005",
+                "Phone Number": "9999999993"
+                # Missing Email column
+            }
+        ]
+        
+        excel_buffer = self.create_test_excel("missing_columns.xlsx", test_data)
+        
+        response = self.make_request('POST', 'students/upload-excel',
+                                   files={'file': ('missing_columns.xlsx', excel_buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+        
+        expected_error = response and response.status_code == 400
+        error_msg = response.json().get('detail', '') if response else ''
+        has_missing_columns = 'Missing required columns' in error_msg
+        
+        self.log_result("Excel Upload (Missing Columns Error)", 
+                      expected_error and has_missing_columns,
+                      f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
+
+    def test_get_all_students(self):
+        """Test 3.1: Get all active students"""
+        print("\n📋 Testing Get All Students (Active Only)...")
+        
+        response = self.make_request('GET', 'students')
+        
+        if response and response.status_code == 200:
+            students = response.json()
+            has_students = len(students) > 0
+            
+            # Check if deleted student (Majja) is NOT in the list
+            deleted_student_present = any(s.get('roll_number') == '112723205013' for s in students)
+            
+            # Check for upload_date and upload_time fields
+            has_upload_fields = all('upload_date' in s and 'upload_time' in s for s in students[:3])  # Check first 3
+            
+            success = has_students and not deleted_student_present and has_upload_fields
+            self.log_result("Get All Students (Active)", success,
+                          f"Count: {len(students)}, Deleted student excluded: {not deleted_student_present}, Has upload fields: {has_upload_fields}")
+            
+            # Check DOB format
+            if students:
+                sample_dob = students[0].get('dob', '')
+                correct_format = len(sample_dob) == 10 and sample_dob[2] == '-' and sample_dob[5] == '-'
+                self.log_result("DOB Format Verification", correct_format,
+                              f"Sample DOB: {sample_dob}, Format DD-MM-YYYY: {correct_format}")
+            
+            return students
+        else:
+            error_msg = response.json().get('detail', 'Unknown error') if response else 'No response'
+            self.log_result("Get All Students (Active)", False,
+                          f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
+            return []
+
+    def test_get_students_including_deleted(self):
+        """Test 3.2: Get all students including deleted"""
+        print("\n🗑️ Testing Get Students Including Deleted...")
+        
+        response = self.make_request('GET', 'students?include_deleted=true')
+        
+        if response and response.status_code == 200:
+            students = response.json()
+            
+            # Check if deleted student (Majja) IS in the list
+            deleted_student = next((s for s in students if s.get('roll_number') == '112723205013'), None)
+            deleted_student_present = deleted_student is not None
+            is_marked_deleted = deleted_student.get('is_deleted', False) if deleted_student else False
+            
+            success = deleted_student_present and is_marked_deleted
+            self.log_result("Get Students Including Deleted", success,
+                          f"Total: {len(students)}, Deleted student found: {deleted_student_present}, Marked as deleted: {is_marked_deleted}")
+        else:
+            error_msg = response.json().get('detail', 'Unknown error') if response else 'No response'
+            self.log_result("Get Students Including Deleted", False,
+                          f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
+
+    def test_soft_delete_student(self):
+        """Test 4.1: Delete a student (soft delete)"""
+        print("\n🗑️ Testing Soft Delete Student...")
+        
+        # First, get a student to delete (try to find one of our test students)
+        students_response = self.make_request('GET', 'students')
+        if not students_response or students_response.status_code != 200:
+            self.log_result("Soft Delete Student", False, "Could not get students list")
+            return None
+        
+        students = students_response.json()
+        test_student = next((s for s in students if s.get('roll_number') in ['112723205030', '112723205031']), None)
+        
+        if not test_student:
+            self.log_result("Soft Delete Student", False, "No test student found to delete")
+            return None
+        
+        student_id = test_student['id']
+        response = self.make_request('DELETE', f'students/{student_id}')
+        
+        if response and response.status_code == 200:
+            data = response.json()
+            success = 'deleted successfully' in data.get('message', '')
+            self.log_result("Soft Delete Student", success,
+                          f"Student {test_student['roll_number']} deleted: {data.get('message', '')}")
+            return test_student
+        else:
+            error_msg = response.json().get('detail', 'Unknown error') if response else 'No response'
+            self.log_result("Soft Delete Student", False,
+                          f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
+            return None
+
+    def test_deleted_student_cannot_login(self, deleted_student):
+        """Test 4.2: Verify deleted student cannot login"""
+        if not deleted_student:
+            self.log_result("Deleted Student Login Test", False, "No deleted student to test")
+            return
+        
+        print("\n🚫 Testing Deleted Student Cannot Login...")
+        
+        response = self.make_request('POST', 'auth/student/login', {
+            "roll_number": deleted_student['roll_number'],
+            "dob": deleted_student['dob']
+        })
+        
+        expected_error = response and response.status_code == 401
+        error_msg = response.json().get('detail', '') if response else ''
+        is_invalid_creds = 'Invalid credentials' in error_msg
+        
+        self.log_result("Deleted Student Cannot Login", 
+                      expected_error and is_invalid_creds,
+                      f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
+
+    def test_deleted_student_not_in_default_list(self, deleted_student):
+        """Test 4.3: Verify deleted student not in default list"""
+        if not deleted_student:
+            self.log_result("Deleted Student Not In List", False, "No deleted student to test")
+            return
+        
+        print("\n📋 Testing Deleted Student Not In Default List...")
+        
+        response = self.make_request('GET', 'students')
+        
+        if response and response.status_code == 200:
+            students = response.json()
+            deleted_in_list = any(s.get('id') == deleted_student['id'] for s in students)
+            
+            self.log_result("Deleted Student Not In Default List", 
+                          not deleted_in_list,
+                          f"Deleted student in default list: {deleted_in_list}")
+        else:
+            error_msg = response.json().get('detail', 'Unknown error') if response else 'No response'
+            self.log_result("Deleted Student Not In Default List", False,
+                          f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
+
+    def run_all_tests(self):
+        """Run all backend tests"""
+        print("🚀 Starting Student Database Backend Tests...")
+        print(f"🌐 Testing against: {self.base_url}")
+        
+        # Authentication
+        if not self.test_admin_login():
+            print("❌ Cannot proceed without admin authentication")
             return False
         
-        target_student = None
-        for student in students:
-            if student.get('roll_number') in ['CS006', 'CS007']:
-                target_student = student
-                break
+        # Student Login Tests
+        self.test_student_login_valid_format()
+        self.test_student_login_wrong_format()
+        self.test_student_login_deleted_user()
+        self.test_student_login_wrong_dob()
         
-        if not target_student:
-            print("   No test student (CS006/CS007) found to delete")
-            return False
+        # Excel Upload Tests
+        self.test_excel_upload_valid()
+        self.test_excel_upload_duplicates()
+        self.test_excel_upload_missing_columns()
         
-        student_id = target_student['id']
-        roll_number = target_student['roll_number']
+        # Student Database Tests
+        students = self.test_get_all_students()
+        self.test_get_students_including_deleted()
         
-        success, response = self.run_test(
-            f"Delete Student {roll_number}",
-            "DELETE",
-            f"students/{student_id}",
-            200
-        )
+        # Soft Delete Tests
+        deleted_student = self.test_soft_delete_student()
+        self.test_deleted_student_cannot_login(deleted_student)
+        self.test_deleted_student_not_in_default_list(deleted_student)
         
-        if success:
-            print(f"   Successfully deleted student {roll_number}")
+        # Print Summary
+        print(f"\n📊 TEST SUMMARY")
+        print(f"Tests Run: {self.tests_run}")
+        print(f"Tests Passed: {self.tests_passed}")
+        print(f"Tests Failed: {self.tests_run - self.tests_passed}")
+        print(f"Success Rate: {(self.tests_passed/self.tests_run)*100:.1f}%")
         
-        return success
-
-    def test_dashboard_stats(self):
-        """Test dashboard statistics"""
-        return self.run_test("Dashboard Stats", "GET", "stats", 200)
-
-    def test_get_items(self):
-        """Test getting items"""
-        return self.run_test("Get Items", "GET", "items", 200)
+        if self.failed_tests:
+            print(f"\n❌ FAILED TESTS:")
+            for failure in self.failed_tests:
+                print(f"  - {failure}")
+        
+        return self.tests_passed == self.tests_run
 
 def main():
-    print("🚀 Starting Lost & Found API Tests")
-    print("=" * 50)
-    
-    tester = LostFoundAPITester()
-    
-    # Test sequence
-    tests = [
-        ("Health Check", tester.test_health_check),
-        ("Admin Login", tester.test_admin_login),
-        ("Get Students", tester.test_get_students),
-        ("Excel Upload", tester.test_excel_upload),
-        ("Delete Student", tester.test_delete_student),
-        ("Dashboard Stats", tester.test_dashboard_stats),
-        ("Get Items", tester.test_get_items),
-        ("Student Login", tester.test_student_login),
-    ]
-    
-    for test_name, test_func in tests:
-        try:
-            result = test_func()
-            if isinstance(result, tuple):
-                success = result[0]
-            else:
-                success = result
-                
-            if not success and test_name == "Admin Login":
-                print("❌ Admin login failed - stopping critical tests")
-                break
-                
-        except Exception as e:
-            print(f"❌ {test_name} failed with exception: {str(e)}")
-    
-    # Print final results
-    print("\n" + "=" * 50)
-    print(f"📊 Test Results: {tester.tests_passed}/{tester.tests_run} passed")
-    
-    if tester.tests_passed == tester.tests_run:
-        print("🎉 All tests passed!")
-        return 0
-    else:
-        print("⚠️  Some tests failed")
-        return 1
+    tester = StudentDatabaseTester()
+    success = tester.run_all_tests()
+    return 0 if success else 1
 
 if __name__ == "__main__":
     sys.exit(main())
