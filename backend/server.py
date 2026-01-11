@@ -332,16 +332,9 @@ async def upload_students_excel(file: UploadFile = File(...), current_user: dict
     }
 
 @api_router.get("/students")
-async def get_students(
-    include_deleted: bool = False,
-    current_user: dict = Depends(require_admin)
-):
-    """Get all students, excluding deleted ones by default"""
-    query = {}
-    if not include_deleted:
-        query["is_deleted"] = False
-    
-    students = await db.students.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+async def get_students(current_user: dict = Depends(require_admin)):
+    """Get all students"""
+    students = await db.students.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return students
 
 @api_router.get("/students/{student_id}")
