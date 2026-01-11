@@ -628,6 +628,89 @@ async def permanent_delete_item(item_id: str, current_user: dict = Depends(requi
     
     return {"message": "Item permanently deleted"}
 
+@api_router.post("/items/{item_id}/like-dislike")
+async def like_dislike_item(item_id: str, data: ItemLike, current_user: dict = Depends(get_current_user)):
+    """Like or dislike an item"""
+    item = await db.items.find_one({"id": item_id})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    user_id = current_user["sub"]
+    action = data.action.lower()
+    
+    if action not in ["like", "dislike"]:
+        raise HTTPException(status_code=400, detail="Action must be 'like' or 'dislike'")
+    
+    # Get current likes/dislikes lists
+    liked_by = item.get("liked_by", [])
+    disliked_by = item.get("disliked_by", [])
+    
+    # Remove from both lists first (user can only have one action)
+    if user_id in liked_by:
+        liked_by.remove(user_id)
+    if user_id in disliked_by:
+        disliked_by.remove(user_id)
+    
+    # Add to appropriate list
+    if action == "like":
+        liked_by.append(user_id)
+    else:  # dislike
+        disliked_by.append(user_id)
+    
+    # Update item in database
+    await db.items.update_one(
+        {"id": item_id},
+        {"$set": {
+            "likes": len(liked_by),
+            "dislikes": len(disliked_by),
+            "liked_by": liked_by,
+            "disliked_by": disliked_by
+        }}
+    )
+    
+    return {
+        "message": f"Item {action}d successfully",
+        "likes": len(liked_by),
+        "dislikes": len(disliked_by)
+    }
+
+@api_router.delete("/items/{item_id}/like-dislike")
+async def remove_like_dislike(item_id: str, current_user: dict = Depends(get_current_user)):
+    """Remove like/dislike from an item"""
+    item = await db.items.find_one({"id": item_id})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    user_id = current_user["sub"]
+    
+    # Get current lists
+    liked_by = item.get("liked_by", [])
+    disliked_by = item.get("disliked_by", [])
+    
+    # Remove from both lists
+    if user_id in liked_by:
+        liked_by.remove(user_id)
+    if user_id in disliked_by:
+        disliked_by.remove(user_id)
+    
+    # Update item
+    await db.items.update_one(
+        {"id": item_id},
+        {"$set": {
+            "likes": len(liked_by),
+            "dislikes": len(disliked_by),
+            "liked_by": liked_by,
+            "disliked_by": disliked_by
+        }}
+    )
+    
+    return {
+        "message": "Like/Dislike removed successfully",
+        "likes": len(liked_by),
+        "dislikes": len(disliked_by)
+    }
+
+
 # ===================== CLAIMS =====================
 
 @api_router.post("/claims")
