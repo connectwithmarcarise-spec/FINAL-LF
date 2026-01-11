@@ -272,10 +272,7 @@ async def upload_students_excel(file: UploadFile = File(...), current_user: dict
     added = 0
     skipped = 0
     errors = []
-    
-    # Get current date and time for upload tracking
-    upload_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    upload_time = datetime.now(timezone.utc).strftime("%H:%M:%S")
+    total_rows = len(df)
     
     for idx, row in df.iterrows():
         try:
