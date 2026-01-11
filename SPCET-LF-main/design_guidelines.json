@@ -1,0 +1,160 @@
+{
+  "identity": {
+    "persona": "E1: The Anti-AI Designer",
+    "mission": "Create a campus lost and found system that feels like a high-end academic tool, not a generic template. Prioritize clarity, trust, and efficiency.",
+    "principles": [
+      "Fusion over Imitation: Mix 'Swiss Poster' precision with 'Utility App' speed.",
+      "Emotion First: Reduce anxiety for lost items; Celebrate relief for found items.",
+      "Content is King: The item photo is the hero. Details are secondary.",
+      "Zoom In: Use large, clear thumbnails for items.",
+      "Negative Space: Don't clutter. Use whitespace to separate distinct actions."
+    ]
+  },
+  "theme": {
+    "name": "Academic Authority",
+    "mode": "light",
+    "emotional_archetype": "Swiss & High-Contrast",
+    "description": "Objective, rigid, functional. Color exists only to guide action."
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Outfit, sans-serif",
+      "weights": ["500", "700"],
+      "usage": "All page titles, section headers, and modal titles. Do NOT use Inter for headings."
+    },
+    "body": {
+      "font_family": "Inter, sans-serif",
+      "weights": ["400", "500"],
+      "usage": "Paragraphs, labels, data tables, inputs."
+    },
+    "mono": {
+      "font_family": "JetBrains Mono, monospace",
+      "usage": "Reference numbers, dates, IDs."
+    }
+  },
+  "colors": {
+    "primary": {
+      "name": "Academic Slate",
+      "hex": "#0F172A",
+      "usage": "Primary buttons, active states, navigation bars."
+    },
+    "background": {
+      "default": "#F8FAFC",
+      "paper": "#FFFFFF",
+      "subtle": "#F1F5F9"
+    },
+    "text": {
+      "primary": "#0F172A",
+      "secondary": "#64748B",
+      "muted": "#94A3B8"
+    },
+    "status": {
+      "lost": {
+        "color": "#F97316",
+        "bg": "#FFF7ED",
+        "label": "Lost Item (Urgent)"
+      },
+      "found": {
+        "color": "#10B981",
+        "bg": "#ECFDF5",
+        "label": "Found Item (Safe)"
+      },
+      "claimed": {
+        "color": "#3B82F6",
+        "bg": "#EFF6FF",
+        "label": "Claimed (Resolved)"
+      }
+    },
+    "border": {
+      "default": "#E2E8F0",
+      "active": "#CBD5E1"
+    }
+  },
+  "visual_enhancers": {
+    "radius": "0.5rem",
+    "shadows": {
+      "card": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+      "hover": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)"
+    },
+    "textures": "Subtle noise overlay on the public landing page hero section only.",
+    "glassmorphism": "Use backdrop-blur-md for sticky headers and modal overlays."
+  },
+  "layout_strategy": {
+    "public_display": {
+      "grid": "Mode A: The Tetris Grid",
+      "description": "Asymmetrical grid for 'Found' items to catch attention. Large hero image of the campus."
+    },
+    "student_dashboard": {
+      "grid": "Mobile-First Stack",
+      "description": "Single column cards. Large touch targets. Bottom navigation on mobile."
+    },
+    "admin_dashboard": {
+      "grid": "Mode B: The Control Room",
+      "description": "High density. Sidebar navigation. Data tables with sticky headers."
+    }
+  },
+  "components": {
+    "buttons": {
+      "style": "Sharp corners or slightly rounded (md). No pill shapes.",
+      "interaction": "Scale down slightly on click (0.98)."
+    },
+    "cards": {
+      "style": "Flat with 1px border. No shadow by default. Shadow on hover.",
+      "content": "Image takes up 50% of card height in grid view."
+    },
+    "inputs": {
+      "style": "Shadcn default with slate-200 border. Focus ring: slate-900."
+    },
+    "tables": {
+      "style": "Compact. Zebra striping optional. Row hover effect mandatory."
+    },
+    "modals": {
+      "style": "Clean white background. No heavy gradients. Clear 'Close' action."
+    }
+  },
+  "image_urls": {
+    "campus_hero": [
+      {
+        "url": "https://images.unsplash.com/photo-1764885518367-e73170e2aeea?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBjb2xsZWdlJTIwY2FtcHVzJTIwYnVpbGRpbmclMjBleHRlcmlvcnxlbnwwfHx8fDE3Njc2NDkwNzN8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Modern building with red accents",
+        "category": "hero"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1762075314840-df83c48bbde8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBjb2xsZWdlJTIwY2FtcHVzJTIwYnVpbGRpbmclMjBleHRlcmlvcnxlbnwwfHx8fDE3Njc2NDkwNzN8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Modern building with glass walkway",
+        "category": "hero_alt"
+      }
+    ],
+    "placeholders": [
+      {
+        "url": "https://images.pexels.com/photos/26866944/pexels-photo-26866944.jpeg",
+        "description": "Generic lost item placeholder 1",
+        "category": "item"
+      },
+      {
+        "url": "https://images.pexels.com/photos/3731256/pexels-photo-3731256.jpeg",
+        "description": "Backpack placeholder",
+        "category": "item"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Use 'Outfit' font for all headings. Import it from Google Fonts.",
+    "Ensure the college name 'ST. PETERS COLLEGE OF ENGINEERING AND TECHNOLOGY' is visible in the header at all times.",
+    "For the Public Display page, use a read-only view with a large search bar.",
+    "Student Login must use 'Roll Number' and 'DOB' fields, not email/password.",
+    "Admin Dashboard must use a Sidebar layout.",
+    "Use the defined color palette strictly. Do not introduce new colors.",
+    "Implement 'Soft Delete' logic in the backend, but visually show 'Deleted' items in a separate Admin tab with a distinct style (e.g., opacity 0.5).",
+    "AI Match Suggestions should be a distinct UI section in the Admin Item Detail view.",
+    "All interactive elements must have data-testid attributes."
+  ],
+  "universal_guidelines": [
+    "Do not use gradients for backgrounds. Use solid colors or subtle noise.",
+    "Avoid 'Inter' for headings.",
+    "Use 2-3x more spacing than typical designs.",
+    "Every interaction needs micro-animations.",
+    "Use 'sonner' for toasts.",
+    "Components must use named exports."
+  ]
+}
