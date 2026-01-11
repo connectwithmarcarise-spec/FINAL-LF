@@ -473,11 +473,8 @@ async def create_item(
     })
     
     return {"message": "Item reported successfully", "item_id": item_id}
-        "user_role": "student",
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    })
-    
-    return {"message": "Item reported successfully", "item_id": item_id}
+
+# ===================== GET ITEMS =====================
 
 @api_router.get("/items")
 async def get_items(
