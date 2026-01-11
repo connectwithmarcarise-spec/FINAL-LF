@@ -82,6 +82,10 @@ class ItemCreate(BaseModel):
     description: str
     location: str
 
+class ItemLike(BaseModel):
+    item_id: str
+    action: str  # "like" or "dislike"
+
 class ClaimRequest(BaseModel):
     item_id: str
     message: Optional[str] = ""
