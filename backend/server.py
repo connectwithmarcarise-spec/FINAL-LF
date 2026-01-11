@@ -418,8 +418,6 @@ async def upload_profile_picture(file: UploadFile = File(...), current_user: dic
 async def create_item(
     item_type: str = Form(...),
     description: str = Form(...),
-    date: str = Form(...),
-    time: str = Form(...),
     location: str = Form(...),
     image: UploadFile = File(...),
     current_user: dict = Depends(require_student)
@@ -439,12 +437,13 @@ async def create_item(
         content = await image.read()
         f.write(content)
     
+    # Auto-capture current date and time
+    now = datetime.now(timezone.utc)
+    
     item = {
         "id": item_id,
         "item_type": item_type,
         "description": description,
-        "date": date,
-        "time": time,
         "location": location,
         "image_url": f"/uploads/items/{image_filename}",
         "student_id": current_user["sub"],
@@ -452,7 +451,13 @@ async def create_item(
         "is_deleted": False,
         "delete_reason": None,
         "deleted_at": None,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "created_at": now.isoformat(),  # ISO datetime
+        "created_date": now.strftime("%Y-%m-%d"),  # YYYY-MM-DD
+        "created_time": now.strftime("%H:%M:%S"),  # HH:MM:SS
+        "likes": 0,  # Like count
+        "dislikes": 0,  # Dislike count
+        "liked_by": [],  # List of user IDs who liked
+        "disliked_by": []  # List of user IDs who disliked
     }
     
     await db.items.insert_one(item)
@@ -463,6 +468,11 @@ async def create_item(
         "action": "item_created",
         "item_id": item_id,
         "user_id": current_user["sub"],
+        "user_role": "student",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {"message": "Item reported successfully", "item_id": item_id}
         "user_role": "student",
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
