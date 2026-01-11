@@ -1,53 +1,153 @@
-import { useEffect } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { Toaster } from "./components/ui/sonner";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+// Pages
+import PublicPage from "./pages/PublicPage";
+import StudentLoginPage from "./pages/StudentLoginPage";
+import AdminLoginPage from "./pages/AdminLoginPage";
+import StudentLayout from "./pages/StudentLayout";
+import StudentDashboard from "./pages/StudentDashboard";
+import ReportLostPage from "./pages/ReportLostPage";
+import ReportFoundPage from "./pages/ReportFoundPage";
+import MyItemsPage from "./pages/MyItemsPage";
+import StudentProfilePage from "./pages/StudentProfilePage";
+import NotificationsPage from "./pages/NotificationsPage";
+import AdminLayout from "./pages/AdminLayout";
+import AdminDashboard from "./pages/AdminDashboard";
+import AdminLostItems from "./pages/AdminLostItems";
+import AdminFoundItems from "./pages/AdminFoundItems";
+import AdminAIMatches from "./pages/AdminAIMatches";
+import AdminClaims from "./pages/AdminClaims";
+import AdminStudents from "./pages/AdminStudents";
+import AdminMessages from "./pages/AdminMessages";
+import AdminDeletedItems from "./pages/AdminDeletedItems";
+import AdminManageAdmins from "./pages/AdminManageAdmins";
+import AdminSettings from "./pages/AdminSettings";
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
+// Protected Route Components
+const StudentRoute = ({ children }) => {
+  const { isAuthenticated, isStudent, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="spinner" />
+      </div>
+    );
+  }
+  
+  if (!isAuthenticated || !isStudent) {
+    return <Navigate to="/student/login" replace />;
+  }
+  
+  return children;
 };
+
+const AdminRoute = ({ children }) => {
+  const { isAuthenticated, isAdmin, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="spinner" />
+      </div>
+    );
+  }
+  
+  if (!isAuthenticated || !isAdmin) {
+    return <Navigate to="/admin/login" replace />;
+  }
+  
+  return children;
+};
+
+const SuperAdminRoute = ({ children }) => {
+  const { isAuthenticated, isSuperAdmin, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="spinner" />
+      </div>
+    );
+  }
+  
+  if (!isAuthenticated || !isSuperAdmin) {
+    return <Navigate to="/admin" replace />;
+  }
+  
+  return children;
+};
+
+function AppRoutes() {
+  return (
+    <Routes>
+      {/* Public Routes */}
+      <Route path="/" element={<PublicPage />} />
+      <Route path="/student/login" element={<StudentLoginPage />} />
+      <Route path="/admin/login" element={<AdminLoginPage />} />
+
+      {/* Student Routes */}
+      <Route
+        path="/student"
+        element={
+          <StudentRoute>
+            <StudentLayout />
+          </StudentRoute>
+        }
+      >
+        <Route index element={<StudentDashboard />} />
+        <Route path="report-lost" element={<ReportLostPage />} />
+        <Route path="report-found" element={<ReportFoundPage />} />
+        <Route path="my-items" element={<MyItemsPage />} />
+        <Route path="profile" element={<StudentProfilePage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
+      </Route>
+
+      {/* Admin Routes */}
+      <Route
+        path="/admin"
+        element={
+          <AdminRoute>
+            <AdminLayout />
+          </AdminRoute>
+        }
+      >
+        <Route index element={<AdminDashboard />} />
+        <Route path="lost-items" element={<AdminLostItems />} />
+        <Route path="found-items" element={<AdminFoundItems />} />
+        <Route path="ai-matches" element={<AdminAIMatches />} />
+        <Route path="claims" element={<AdminClaims />} />
+        <Route path="students" element={<AdminStudents />} />
+        <Route path="messages" element={<AdminMessages />} />
+        <Route path="deleted-items" element={<AdminDeletedItems />} />
+        <Route path="settings" element={<AdminSettings />} />
+        <Route
+          path="manage-admins"
+          element={
+            <SuperAdminRoute>
+              <AdminManageAdmins />
+            </SuperAdminRoute>
+          }
+        />
+      </Route>
+
+      {/* Catch all - redirect to home */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
 
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+        <Toaster position="top-right" richColors />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 
