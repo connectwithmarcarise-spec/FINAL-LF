@@ -363,9 +363,24 @@ async def add_admin_note(student_id: str, data: AdminNote, current_user: dict = 
 
 @api_router.delete("/students/{student_id}")
 async def delete_student(student_id: str, current_user: dict = Depends(require_admin)):
-    result = await db.students.delete_one({"id": student_id})
-    if result.deleted_count == 0:
+    """Soft delete student - marks as deleted but keeps in database"""
+    student = await db.students.find_one({"id": student_id})
+    if not student:
         raise HTTPException(status_code=404, detail="Student not found")
+    
+    # Soft delete - mark as deleted
+    result = await db.students.update_one(
+        {"id": student_id},
+        {"$set": {
+            "is_deleted": True,
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": current_user["sub"]
+        }}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
     return {"message": "Student deleted successfully"}
 
 # ===================== STUDENT PROFILE =====================
