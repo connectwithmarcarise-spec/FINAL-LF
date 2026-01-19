@@ -155,9 +155,25 @@ export const ItemCard = ({
               )}
             </div>
           )}
+          
+          {/* CRITICAL: Claim button for students viewing found items */}
+          {showClaimButton && item.item_type === 'found' && item.status === 'active' && (
+            <div className="mt-4 pt-3 border-t border-slate-100">
+              <Button 
+                className="w-full bg-emerald-600 hover:bg-emerald-700"
+                size="sm"
+                onClick={() => setShowClaimDialog(true)}
+                data-testid={`claim-item-${item.id}`}
+              >
+                <Hand className="w-4 h-4 mr-2" />
+                Claim This Item
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Delete Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>
