@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { MapPin, Calendar, Clock, Eye, Trash2 } from 'lucide-react';
+import { MapPin, Calendar, Clock, Eye, Trash2, Hand } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import {
@@ -13,6 +13,8 @@ import {
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
+import { toast } from 'sonner';
+import { claimsAPI } from '../services/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
