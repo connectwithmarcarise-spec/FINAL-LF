@@ -209,6 +209,47 @@ export const ItemCard = ({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Claim Dialog */}
+      <Dialog open={showClaimDialog} onOpenChange={setShowClaimDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Claim This Item</DialogTitle>
+            <DialogDescription>
+              Please provide details explaining why this item belongs to you.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="claimDetails">Claim Details *</Label>
+              <Textarea
+                id="claimDetails"
+                placeholder="Describe the item, where you lost it, unique features, etc."
+                value={claimDetails}
+                onChange={(e) => setClaimDetails(e.target.value)}
+                rows={4}
+                data-testid="claim-details-input"
+              />
+              <p className="text-xs text-slate-500">
+                Provide specific details to help verify your claim
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowClaimDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleClaim} 
+              disabled={!claimDetails.trim() || claiming}
+              className="bg-emerald-600 hover:bg-emerald-700"
+              data-testid="confirm-claim-btn"
+            >
+              {claiming ? 'Submitting...' : 'Submit Claim'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
