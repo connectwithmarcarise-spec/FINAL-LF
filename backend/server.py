@@ -172,6 +172,95 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode(), hashed.encode())
 
+async def auto_migrate_students_to_folders():
+    """Auto-migrate existing students to folder structure"""
+    try:
+        # Check if migration already done
+        migration_marker = await db.system_config.find_one({"key": "students_migrated_to_folders"})
+        if migration_marker:
+            logging.info("Students already migrated to folders")
+            return
+        
+        # Get all unique departments and years
+        students = await db.students.find({}, {"_id": 0, "department": 1, "year": 1}).to_list(10000)
+        
+        if not students:
+            logging.info("No students to migrate")
+            return
+        
+        dept_year_combos = {}
+        for s in students:
+            dept = s.get("department", "Unknown")
+            year = s.get("year", "1")
+            if dept not in dept_year_combos:
+                dept_year_combos[dept] = set()
+            dept_year_combos[dept].add(year)
+        
+        # Create department folders
+        for dept in dept_year_combos.keys():
+            existing_dept = await db.folders.find_one({"name": dept, "type": "department"})
+            if not existing_dept:
+                dept_folder = {
+                    "id": str(uuid.uuid4()),
+                    "name": dept,
+                    "type": "department",
+                    "parent_id": None,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_by": "system"
+                }
+                await db.folders.insert_one(dept_folder)
+                logging.info(f"Created department folder: {dept}")
+        
+        # Create year folders and assign students
+        for dept, years in dept_year_combos.items():
+            dept_folder = await db.folders.find_one({"name": dept, "type": "department"})
+            if not dept_folder:
+                continue
+            
+            for year in years:
+                year_name = f"{year}"
+                existing_year = await db.folders.find_one({
+                    "name": year_name,
+                    "type": "year",
+                    "parent_id": dept_folder["id"]
+                })
+                
+                if not existing_year:
+                    year_folder = {
+                        "id": str(uuid.uuid4()),
+                        "name": year_name,
+                        "type": "year",
+                        "parent_id": dept_folder["id"],
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "created_by": "system"
+                    }
+                    await db.folders.insert_one(year_folder)
+                    year_folder_id = year_folder["id"]
+                    logging.info(f"Created year folder: {dept} - {year_name}")
+                else:
+                    year_folder_id = existing_year["id"]
+                
+                # Update students
+                await db.students.update_many(
+                    {"department": dept, "year": str(year), "department_folder_id": {"$exists": False}},
+                    {"$set": {
+                        "department_folder_id": dept_folder["id"],
+                        "year_folder_id": year_folder_id
+                    }}
+                )
+        
+        # Mark migration as complete
+        await db.system_config.insert_one({
+            "key": "students_migrated_to_folders",
+            "value": True,
+            "migrated_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+        logging.info("Student migration to folders completed successfully")
+    
+    except Exception as e:
+        logging.error(f"Error during student migration: {str(e)}")
+
 # ===================== STARTUP =====================
 
 @app.on_event("startup")
