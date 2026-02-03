@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import axios from 'axios';
 import { messagesAPI } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { toast } from 'sonner';
-import { Bell, Mail, MailOpen, CheckCheck } from 'lucide-react';
+import { Bell, Mail, MailOpen, CheckCheck, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { format } from 'date-fns';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const NotificationsPage = () => {
   const { refreshUnread } = useOutletContext();
@@ -49,6 +52,23 @@ const NotificationsPage = () => {
       toast.success('All notifications marked as read');
     } catch (error) {
       toast.error('Failed to mark all as read');
+    }
+  };
+
+  const handleReact = async (messageId, reaction) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `${BACKEND_URL}/api/messages/${messageId}/react?reaction=${reaction}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success(reaction === 'thumbs_up' ? 'Reacted with 👍' : 'Reacted with 👎');
+      setMessages(messages.map(m => 
+        m.id === messageId ? { ...m, student_reaction: reaction } : m
+      ));
+    } catch (error) {
+      toast.error('Failed to react');
     }
   };
 
