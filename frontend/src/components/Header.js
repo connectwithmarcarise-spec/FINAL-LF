@@ -29,18 +29,25 @@ export const PublicHeader = () => {
           </Link>
           <nav className="flex items-center gap-4">
             <Link 
-              to="/student/login"
+              to="/lobby"
               className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+              data-testid="common-lobby-link"
+            >
+              Common Lobby
+            </Link>
+            <Link 
+              to="/student/login"
+              className="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors btn-press shadow-sm"
               data-testid="student-login-link"
             >
               Student Login
             </Link>
             <Link 
               to="/admin/login"
-              className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-md hover:bg-slate-800 transition-colors btn-press"
+              className="px-4 py-2 text-slate-600 border border-slate-300 text-sm font-medium rounded-md hover:bg-slate-50 transition-colors"
               data-testid="admin-login-link"
             >
-              Admin Login
+              Admin
             </Link>
           </nav>
         </div>
