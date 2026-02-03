@@ -188,6 +188,19 @@ const PublicPage = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
       <PublicHeader />
 
+      {/* Back Button for Authenticated Users */}
+      {isAuthenticated && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          <button 
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </button>
+        </div>
+      )}
+
       {/* Hero Section */}
       <section className="relative bg-slate-900 text-white overflow-hidden">
         <div 
