@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { Search, MapPin, Clock, Package, User2, GraduationCap, Calendar } from 'lucide-react';
+import { Search, MapPin, Clock, Package, User2, GraduationCap, Calendar, ArrowLeft } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
