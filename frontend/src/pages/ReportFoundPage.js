@@ -5,17 +5,38 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { toast } from 'sonner';
-import { Package, Upload, MapPin, Calendar, Clock, ArrowLeft } from 'lucide-react';
+import { Package, Upload, MapPin, Clock, ArrowLeft, Tag } from 'lucide-react';
+
+const ITEM_KEYWORDS = [
+  'Phone',
+  'Laptop',
+  'Charger',
+  'Wallet',
+  'Keys',
+  'ID Card',
+  'Bag',
+  'Watch',
+  'Others'
+];
+
+const TIME_SLOTS = [
+  'Morning (6 AM – 12 PM)',
+  'Afternoon (12 PM – 6 PM)',
+  'Evening (6 PM – 10 PM)',
+  'Night (10 PM – 6 AM)'
+];
 
 const ReportFoundPage = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
+    item_keyword: '',
+    custom_keyword: '',
     description: '',
     location: '',
-    date: '',
-    time: ''
+    approximate_time: ''
   });
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -36,8 +57,17 @@ const ReportFoundPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.description || !formData.location || !formData.date || !formData.time || !image) {
-      toast.error('Please fill all fields and upload an image');
+    const finalKeyword = formData.item_keyword === 'Others' 
+      ? formData.custom_keyword 
+      : formData.item_keyword;
+
+    if (!finalKeyword || !formData.description || !formData.location || !formData.approximate_time || !image) {
+      toast.error('Please fill all required fields and upload an image');
+      return;
+    }
+
+    if (formData.item_keyword === 'Others' && !formData.custom_keyword.trim()) {
+      toast.error('Please specify the item type');
       return;
     }
 
@@ -45,14 +75,14 @@ const ReportFoundPage = () => {
     try {
       const data = new FormData();
       data.append('item_type', 'found');
+      data.append('item_keyword', finalKeyword);
       data.append('description', formData.description);
       data.append('location', formData.location);
-      data.append('date', formData.date);
-      data.append('time', formData.time);
+      data.append('approximate_time', formData.approximate_time);
       data.append('image', image);
 
       await itemsAPI.createItem(data);
-      toast.success('Found item reported successfully! Thank you for helping.');
+      toast.success('Found item reported successfully!');
       navigate('/student/my-items');
     } catch (error) {
       const message = error.response?.data?.detail || 'Failed to report item';
@@ -81,13 +111,98 @@ const ReportFoundPage = () => {
             <div>
               <CardTitle className="font-outfit text-xl">Report Found Item</CardTitle>
               <CardDescription>
-                Thank you for helping! Provide details so the owner can identify their item.
+                Date and time will be automatically recorded when you submit
               </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Item Keyword */}
+            <div className="space-y-2">
+              <Label htmlFor="item_keyword">
+                <Tag className="w-4 h-4 inline mr-1" />
+                Item Type *
+              </Label>
+              <Select 
+                value={formData.item_keyword} 
+                onValueChange={(value) => setFormData({...formData, item_keyword: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select item type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ITEM_KEYWORDS.map((keyword) => (
+                    <SelectItem key={keyword} value={keyword}>
+                      {keyword}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Custom Keyword - Show if Others selected */}
+            {formData.item_keyword === 'Others' && (
+              <div className="space-y-2">
+                <Label htmlFor="custom_keyword">Specify Item Type *</Label>
+                <Input
+                  id="custom_keyword"
+                  placeholder="e.g., Headphones, Book, etc."
+                  value={formData.custom_keyword}
+                  onChange={(e) => setFormData({...formData, custom_keyword: e.target.value})}
+                />
+              </div>
+            )}
+
+            {/* Description */}
+            <div className="space-y-2">
+              <Label htmlFor="description">Description *</Label>
+              <Textarea
+                id="description"
+                placeholder="Describe the item in detail (color, brand, any identifying features)"
+                value={formData.description}
+                onChange={(e) => setFormData({...formData, description: e.target.value})}
+                rows={4}
+              />
+            </div>
+
+            {/* Location */}
+            <div className="space-y-2">
+              <Label htmlFor="location">
+                <MapPin className="w-4 h-4 inline mr-1" />
+                Found Location *
+              </Label>
+              <Input
+                id="location"
+                placeholder="e.g., Library, Cafeteria, Parking Lot B"
+                value={formData.location}
+                onChange={(e) => setFormData({...formData, location: e.target.value})}
+              />
+            </div>
+
+            {/* Approximate Time */}
+            <div className="space-y-2">
+              <Label htmlFor="approximate_time">
+                <Clock className="w-4 h-4 inline mr-1" />
+                Approximate Time *
+              </Label>
+              <Select 
+                value={formData.approximate_time} 
+                onValueChange={(value) => setFormData({...formData, approximate_time: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select time slot" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIME_SLOTS.map((slot) => (
+                    <SelectItem key={slot} value={slot}>
+                      {slot}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Image Upload */}
             <div className="space-y-2">
               <Label>Item Image *</Label>
@@ -98,106 +213,51 @@ const ReportFoundPage = () => {
                 onClick={() => document.getElementById('image-upload').click()}
               >
                 {imagePreview ? (
-                  <div className="relative">
+                  <div className="space-y-3">
                     <img 
                       src={imagePreview} 
                       alt="Preview" 
-                      className="max-h-48 mx-auto rounded-lg"
+                      className="max-h-64 mx-auto rounded-lg"
                     />
-                    <p className="text-sm text-slate-500 mt-2">Click to change image</p>
+                    <p className="text-sm text-emerald-600 font-medium">Image uploaded ✓</p>
                   </div>
                 ) : (
-                  <>
-                    <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
-                    <p className="text-sm text-slate-600">Click to upload an image of the found item</p>
-                    <p className="text-xs text-slate-400 mt-1">PNG, JPG up to 5MB</p>
-                  </>
+                  <div className="space-y-3">
+                    <Upload className="w-12 h-12 mx-auto text-slate-400" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Click to upload image</p>
+                      <p className="text-xs text-slate-500 mt-1">PNG, JPG up to 5MB</p>
+                    </div>
+                  </div>
                 )}
-                <input
-                  id="image-upload"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="hidden"
-                  data-testid="image-upload-input"
-                />
               </div>
-            </div>
-
-            {/* Description */}
-            <div className="space-y-2">
-              <Label htmlFor="description">Description *</Label>
-              <Textarea
-                id="description"
-                placeholder="Describe the item (color, brand, condition, any identifying marks...)"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows={4}
-                data-testid="description-input"
+              <input
+                id="image-upload"
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                className="hidden"
               />
             </div>
 
-            {/* Location */}
-            <div className="space-y-2">
-              <Label htmlFor="location">
-                <MapPin className="w-4 h-4 inline mr-1" />
-                Where Found *
-              </Label>
-              <Input
-                id="location"
-                placeholder="e.g., Library, Block A, Cafeteria"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                data-testid="location-input"
-              />
+            {/* Submit Button */}
+            <div className="flex gap-3 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate(-1)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={loading}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+              >
+                {loading ? 'Reporting...' : 'Report Found Item'}
+              </Button>
             </div>
-
-            {/* Date and Time */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="date">
-                  <Calendar className="w-4 h-4 inline mr-1" />
-                  Date Found *
-                </Label>
-                <Input
-                  id="date"
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  max={new Date().toISOString().split('T')[0]}
-                  data-testid="date-input"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="time">
-                  <Clock className="w-4 h-4 inline mr-1" />
-                  Time Found *
-                </Label>
-                <Input
-                  id="time"
-                  type="time"
-                  value={formData.time}
-                  onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                  data-testid="time-input"
-                />
-              </div>
-            </div>
-
-            <Button 
-              type="submit" 
-              className="w-full bg-emerald-600 hover:bg-emerald-700 btn-press"
-              disabled={loading}
-              data-testid="submit-found-item"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <span className="spinner w-4 h-4" />
-                  Submitting...
-                </span>
-              ) : (
-                'Submit Report'
-              )}
-            </Button>
           </form>
         </CardContent>
       </Card>
