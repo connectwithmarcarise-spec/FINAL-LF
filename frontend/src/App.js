@@ -13,6 +13,7 @@ import StudentLostItems from "./pages/StudentLostItems";
 import StudentFoundItems from "./pages/StudentFoundItems";
 import ReportLostPage from "./pages/ReportLostPage";
 import ReportFoundPage from "./pages/ReportFoundPage";
+import AIClaimChat from "./components/AIClaimChat";
 import MyItemsPage from "./pages/MyItemsPage";
 import StudentProfilePage from "./pages/StudentProfilePage";
 import NotificationsPage from "./pages/NotificationsPage";
@@ -117,6 +118,7 @@ function AppRoutes() {
         <Route path="found-items" element={<StudentFoundItems />} />
         <Route path="report-lost" element={<ReportLostPage />} />
         <Route path="report-found" element={<ReportFoundPage />} />
+        <Route path="claim/:itemId" element={<AIClaimChat />} />
         <Route path="my-items" element={<MyItemsPage />} />
         <Route path="profile" element={<StudentProfilePage />} />
         <Route path="notifications" element={<NotificationsPage />} />
