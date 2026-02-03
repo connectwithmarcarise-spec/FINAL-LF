@@ -1110,12 +1110,21 @@ async def get_claims(status: Optional[str] = None, current_user: dict = Depends(
     
     claims = await db.claims.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
     
+    # Enrich claims with item and claimant details
     for claim in claims:
+        # Get item details (including secret_message for admins)
         item = await db.items.find_one({"id": claim["item_id"]}, {"_id": 0})
-        claim["item"] = item
+        if item:
+            # For students, remove secret_message
+            if current_user["role"] == "student":
+                item.pop("secret_message", None)
+            claim["item"] = item
+        
+        # Get claimant details (for admins only)
         if current_user["role"] in ["admin", "super_admin"]:
-            claimant = await db.students.find_one({"id": claim["claimant_id"]}, {"_id": 0, "full_name": 1, "roll_number": 1, "department": 1})
-            claim["claimant"] = claimant
+            claimant = await db.students.find_one({"id": claim["claimant_id"]}, {"_id": 0})
+            if claimant:
+                claim["claimant"] = claimant
     
     return claims
 
