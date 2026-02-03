@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { messagesAPI, studentsAPI } from '../services/api';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
+import { Badge } from '../components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -21,16 +24,22 @@ import {
   DialogFooter,
 } from '../components/ui/dialog';
 import { toast } from 'sonner';
-import { MessageSquare, Send, Mail, MailOpen, Users } from 'lucide-react';
+import { MessageSquare, Send, Mail, MailOpen, Users, Edit2, Trash2, ThumbsUp, ThumbsDown, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { format } from 'date-fns';
 
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+
 const AdminMessages = () => {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showComposeDialog, setShowComposeDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState('');
   const [messageContent, setMessageContent] = useState('');
+  const [editingMessage, setEditingMessage] = useState(null);
+  const [editContent, setEditContent] = useState('');
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
@@ -74,6 +83,44 @@ const AdminMessages = () => {
     }
   };
 
+  const handleEditMessage = async () => {
+    if (!editContent.trim()) {
+      toast.error('Message content cannot be empty');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(
+        `${BACKEND_URL}/api/messages/${editingMessage.id}?content=${encodeURIComponent(editContent)}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('Message updated successfully');
+      setShowEditDialog(false);
+      setEditingMessage(null);
+      setEditContent('');
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to update message');
+    }
+  };
+
+  const handleDeleteMessage = async (messageId) => {
+    if (!window.confirm('Are you sure you want to delete this message?')) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`${BACKEND_URL}/api/messages/${messageId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Message deleted successfully');
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to delete message');
+    }
+  };
+
   const groupedMessages = messages.reduce((acc, msg) => {
     const recipientId = msg.recipient_id;
     if (!acc[recipientId]) {
@@ -83,14 +130,32 @@ const AdminMessages = () => {
     return acc;
   }, {});
 
+  const getReactionIcon = (reaction) => {
+    if (reaction === 'thumbs_up') return <ThumbsUp className="w-4 h-4 text-green-600" />;
+    if (reaction === 'thumbs_down') return <ThumbsDown className="w-4 h-4 text-red-600" />;
+    return null;
+  };
+
   return (
-    <div className="space-y-6 animate-fade-in" data-testid="admin-messages">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="p-6 space-y-6">
+      {/* Back Button */}
+      <button 
+        onClick={() => navigate('/admin')}
+        className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back to Dashboard
+      </button>
+
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-outfit text-2xl font-bold text-slate-900">Messages</h1>
-          <p className="text-slate-500">Send notifications to students</p>
+          <h1 className="text-3xl font-bold text-slate-900 font-outfit flex items-center gap-3">
+            <MessageSquare className="w-8 h-8 text-blue-600" />
+            Messages
+          </h1>
+          <p className="text-slate-600 mt-1">Send and manage messages to students</p>
         </div>
-        <Button onClick={() => setShowComposeDialog(true)} data-testid="compose-message-btn">
+        <Button onClick={() => setShowComposeDialog(true)}>
           <Send className="w-4 h-4 mr-2" />
           Compose Message
         </Button>
@@ -100,59 +165,121 @@ const AdminMessages = () => {
         <div className="flex justify-center py-12">
           <div className="spinner" />
         </div>
-      ) : messages.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <MessageSquare className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-            <p className="text-slate-500">No messages sent yet</p>
-            <Button 
-              className="mt-4" 
-              onClick={() => setShowComposeDialog(true)}
-            >
-              Send First Message
-            </Button>
-          </CardContent>
-        </Card>
       ) : (
-        <div className="space-y-4">
-          {messages.map((message) => {
-            const student = students.find(s => s.id === message.recipient_id);
-            return (
-              <Card key={message.id} data-testid={`message-${message.id}`}>
-                <CardContent className="p-4">
-                  <div className="flex gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      message.is_read ? 'bg-slate-100' : 'bg-blue-100'
-                    }`}>
-                      {message.is_read ? (
-                        <MailOpen className="w-5 h-5 text-slate-400" />
-                      ) : (
-                        <Mail className="w-5 h-5 text-blue-600" />
-                      )}
+        <div className="grid gap-6">
+          {Object.keys(groupedMessages).length === 0 ? (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <MessageSquare className="w-16 h-16 mx-auto text-slate-300 mb-4" />
+                <p className="text-slate-500">No messages yet</p>
+              </CardContent>
+            </Card>
+          ) : (
+            Object.keys(groupedMessages).map((recipientId) => {
+              const recipientMessages = groupedMessages[recipientId];
+              const firstMessage = recipientMessages[0];
+              const recipient = firstMessage.recipient;
+
+              return (
+                <Card key={recipientId}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2">
+                        <Users className="w-5 h-5 text-blue-600" />
+                        Conversation with {recipient?.full_name || 'Unknown Student'}
+                      </CardTitle>
+                      <Badge variant="outline">
+                        {recipientMessages.length} message{recipientMessages.length !== 1 ? 's' : ''}
+                      </Badge>
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">
-                            To: {student?.full_name || 'Unknown'} ({student?.roll_number || '-'})
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {format(new Date(message.created_at), 'MMM d, yyyy • h:mm a')}
-                          </p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {recipientMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className="border rounded-lg p-4 space-y-3"
+                      >
+                        {/* Message Header */}
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm font-semibold text-slate-700">
+                                From: {msg.sender?.full_name || msg.sender?.username || 'Admin'}
+                              </span>
+                              <span className="text-xs text-slate-500">→</span>
+                              <span className="text-sm font-semibold text-slate-700">
+                                To: {msg.recipient?.full_name || 'Student'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              {format(new Date(msg.created_at), 'PPp')}
+                              {msg.updated_at && ' (edited)'}
+                            </p>
+                          </div>
+                          
+                          {/* Admin Actions */}
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditingMessage(msg);
+                                setEditContent(msg.content);
+                                setShowEditDialog(true);
+                              }}
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDeleteMessage(msg.id)}
+                            >
+                              <Trash2 className="w-4 h-4 text-red-600" />
+                            </Button>
+                          </div>
                         </div>
-                        {message.is_read ? (
-                          <span className="text-xs text-slate-400">Read</span>
-                        ) : (
-                          <span className="text-xs text-blue-600 font-medium">Unread</span>
-                        )}
+
+                        {/* Message Content */}
+                        <p className="text-sm text-slate-800 bg-slate-50 rounded p-3">
+                          {msg.content}
+                        </p>
+
+                        {/* Message Status & Reactions */}
+                        <div className="flex items-center gap-4 text-xs">
+                          {/* Seen Status */}
+                          <div className="flex items-center gap-1">
+                            {msg.is_read ? (
+                              <>
+                                <Eye className="w-3.5 h-3.5 text-green-600" />
+                                <span className="text-green-600 font-medium">Seen</span>
+                              </>
+                            ) : (
+                              <>
+                                <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                                <span className="text-slate-500">Not Seen</span>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Student Reaction */}
+                          {msg.student_reaction && (
+                            <div className="flex items-center gap-1 px-2 py-1 bg-slate-100 rounded">
+                              <span className="text-slate-600">Student reacted:</span>
+                              {getReactionIcon(msg.student_reaction)}
+                              <span className="font-medium">
+                                {msg.student_reaction === 'thumbs_up' ? 'Thumbs Up' : 'Thumbs Down'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-sm text-slate-600 mt-2">{message.content}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                    ))}
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
         </div>
       )}
 
@@ -161,15 +288,13 @@ const AdminMessages = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Compose Message</DialogTitle>
-            <DialogDescription>
-              Send a notification to a student
-            </DialogDescription>
+            <DialogDescription>Send a message to a student</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
+          <div className="space-y-4">
+            <div>
               <Label>Select Student</Label>
               <Select value={selectedStudent} onValueChange={setSelectedStudent}>
-                <SelectTrigger data-testid="student-select">
+                <SelectTrigger>
                   <SelectValue placeholder="Choose a student" />
                 </SelectTrigger>
                 <SelectContent>
@@ -181,14 +306,13 @@ const AdminMessages = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
+            <div>
               <Label>Message</Label>
               <Textarea
-                placeholder="Enter your message..."
+                placeholder="Type your message here..."
                 value={messageContent}
                 onChange={(e) => setMessageContent(e.target.value)}
-                rows={4}
-                data-testid="message-content-input"
+                rows={5}
               />
             </div>
           </div>
@@ -196,22 +320,37 @@ const AdminMessages = () => {
             <Button variant="outline" onClick={() => setShowComposeDialog(false)}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleSendMessage} 
-              disabled={sending}
-              data-testid="send-message-btn"
-            >
-              {sending ? (
-                <span className="flex items-center gap-2">
-                  <span className="spinner w-4 h-4" />
-                  Sending...
-                </span>
-              ) : (
-                <>
-                  <Send className="w-4 h-4 mr-2" />
-                  Send
-                </>
-              )}
+            <Button onClick={handleSendMessage} disabled={sending}>
+              {sending ? 'Sending...' : 'Send Message'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Message</DialogTitle>
+            <DialogDescription>Update the message content</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Message</Label>
+              <Textarea
+                placeholder="Type your message here..."
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                rows={5}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditMessage}>
+              Update Message
             </Button>
           </DialogFooter>
         </DialogContent>
