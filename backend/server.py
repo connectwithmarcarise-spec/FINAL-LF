@@ -1541,7 +1541,7 @@ async def get_folder(folder_id: str, current_user: dict = Depends(require_super_
         uploads = await db.excel_uploads.find(
             {"year_folder_id": folder_id},
             {"_id": 0}
-        }).sort("uploaded_at", -1).to_list(100)
+        ).sort("uploaded_at", -1).to_list(100)
         folder["uploads"] = uploads
     
     return folder
