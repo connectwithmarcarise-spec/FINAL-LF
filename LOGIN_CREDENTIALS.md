@@ -6,7 +6,7 @@
 
 ## How to Login:
 
-1. Go to: https://lostfound-fix.preview.emergentagent.com/admin/login
+1. Go to: https://repo-inspector-75.preview.emergentagent.com/admin/login
 
 2. In the Username field, type exactly (without quotes):
    ```

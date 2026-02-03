@@ -6,7 +6,7 @@ from datetime import datetime
 from io import BytesIO
 
 class StudentDatabaseTester:
-    def __init__(self, base_url="https://lostfound-fix.preview.emergentagent.com/api"):
+    def __init__(self, base_url="https://repo-inspector-75.preview.emergentagent.com/api"):
         self.base_url = base_url
         self.admin_token = None
         self.tests_run = 0

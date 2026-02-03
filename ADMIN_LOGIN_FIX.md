@@ -13,7 +13,7 @@ Username: superadmin
 Password: admin123
 ```
 
-**Login URL:** https://lostfound-fix.preview.emergentagent.com/admin/login
+**Login URL:** https://repo-inspector-75.preview.emergentagent.com/admin/login
 
 ---
 

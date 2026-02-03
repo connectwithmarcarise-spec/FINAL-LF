@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 
 class CampusLostFoundTester:
-    def __init__(self, base_url="https://findmine.preview.emergentagent.com"):
+    def __init__(self, base_url="https://repo-inspector-75.preview.emergentagent.com"):
         self.base_url = base_url
         self.admin_token = None
         self.super_admin_token = None
