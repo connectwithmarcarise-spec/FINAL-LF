@@ -210,6 +210,25 @@ const ReportLostPage = () => {
               </Select>
             </div>
 
+            {/* Secret Identification Message - MANDATORY */}
+            <div className="space-y-2 bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4">
+              <Label htmlFor="secret_message" className="text-yellow-900 font-semibold">
+                🔒 Secret Identification Message * (MANDATORY)
+              </Label>
+              <Textarea
+                id="secret_message"
+                placeholder="Enter secret details only you would know (e.g., 'Right side tear in purse', 'Parents photo inside wallet', 'Scratch on back')"
+                value={formData.secret_message}
+                onChange={(e) => setFormData({...formData, secret_message: e.target.value})}
+                rows={3}
+                className="border-yellow-300 focus:border-yellow-500 bg-white"
+                required
+              />
+              <p className="text-xs text-yellow-800">
+                ⚠️ This message will NEVER be shown publicly. Only visible to AI and admins for verification.
+              </p>
+            </div>
+
             {/* Image Upload */}
             <div className="space-y-2">
               <Label>Item Image *</Label>
