@@ -583,11 +583,15 @@ async def create_item(
     description: str = Form(...),
     location: str = Form(...),
     approximate_time: str = Form(...),
+    secret_message: str = Form(...),  # NEW: Mandatory secret identification message
     image: UploadFile = File(...),
     current_user: dict = Depends(require_student)
 ):
     if item_type not in ["lost", "found"]:
         raise HTTPException(status_code=400, detail="Item type must be 'lost' or 'found'")
+    
+    if not secret_message or not secret_message.strip():
+        raise HTTPException(status_code=400, detail="Secret Identification Message is mandatory")
     
     if not image.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Only image files are allowed")
@@ -611,6 +615,7 @@ async def create_item(
         "description": description,
         "location": location,
         "approximate_time": approximate_time,
+        "secret_message": secret_message,  # NEW: Store secret message (NOT exposed publicly)
         "image_url": f"/uploads/items/{image_filename}",
         "student_id": current_user["sub"],
         "status": "active",  # active, claimed, resolved
