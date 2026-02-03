@@ -129,7 +129,7 @@ const NotificationsPage = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                      <div>
+                      <div className="flex-1">
                         <p className="text-sm text-slate-900">{message.content}</p>
                         <p className="text-xs text-slate-500 mt-1">
                           {format(new Date(message.created_at), 'MMM d, yyyy • h:mm a')}
@@ -139,17 +139,43 @@ const NotificationsPage = () => {
                         <Badge className="bg-blue-500 text-white text-xs">New</Badge>
                       )}
                     </div>
-                    {!message.is_read && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="mt-2 text-xs"
-                        onClick={() => handleMarkAsRead(message.id)}
-                        data-testid={`mark-read-${message.id}`}
-                      >
-                        Mark as read
-                      </Button>
-                    )}
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2 mt-3">
+                      {!message.is_read && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs"
+                          onClick={() => handleMarkAsRead(message.id)}
+                          data-testid={`mark-read-${message.id}`}
+                        >
+                          Mark as read
+                        </Button>
+                      )}
+                      
+                      {/* Student Reactions - Thumbs Up/Down ONLY */}
+                      <div className="flex items-center gap-1 ml-auto">
+                        <Button
+                          variant={message.student_reaction === 'thumbs_up' ? 'default' : 'outline'}
+                          size="sm"
+                          className={`text-xs ${message.student_reaction === 'thumbs_up' ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                          onClick={() => handleReact(message.id, 'thumbs_up')}
+                        >
+                          <ThumbsUp className="w-3.5 h-3.5 mr-1" />
+                          {message.student_reaction === 'thumbs_up' && 'Reacted'}
+                        </Button>
+                        <Button
+                          variant={message.student_reaction === 'thumbs_down' ? 'default' : 'outline'}
+                          size="sm"
+                          className={`text-xs ${message.student_reaction === 'thumbs_down' ? 'bg-red-600 hover:bg-red-700' : ''}`}
+                          onClick={() => handleReact(message.id, 'thumbs_down')}
+                        >
+                          <ThumbsDown className="w-3.5 h-3.5 mr-1" />
+                          {message.student_reaction === 'thumbs_down' && 'Reacted'}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </CardContent>
