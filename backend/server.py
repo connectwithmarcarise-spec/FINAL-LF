@@ -1310,6 +1310,29 @@ async def get_messages(current_user: dict = Depends(get_current_user)):
         ]}
     
     messages = await db.messages.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    
+    # Enrich messages with sender and recipient details
+    for msg in messages:
+        # Get sender details
+        if msg["sender_type"] in ["admin", "super_admin"]:
+            sender = await db.admins.find_one({"id": msg["sender_id"]}, {"_id": 0, "username": 1, "full_name": 1, "role": 1})
+            if sender:
+                msg["sender"] = sender
+        else:
+            sender = await db.students.find_one({"id": msg["sender_id"]}, {"_id": 0, "full_name": 1, "roll_number": 1})
+            if sender:
+                msg["sender"] = sender
+        
+        # Get recipient details
+        if msg["recipient_type"] == "student":
+            recipient = await db.students.find_one({"id": msg["recipient_id"]}, {"_id": 0, "full_name": 1, "roll_number": 1})
+            if recipient:
+                msg["recipient"] = recipient
+        else:
+            recipient = await db.admins.find_one({"id": msg["recipient_id"]}, {"_id": 0, "username": 1, "full_name": 1})
+            if recipient:
+                msg["recipient"] = recipient
+    
     return messages
 
 @api_router.get("/messages/unread-count")
