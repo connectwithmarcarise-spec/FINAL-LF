@@ -11,11 +11,13 @@ import {
   LogOut,
   Sparkles,
   UserCog,
-  Building2
+  Building2,
+  Globe
 } from 'lucide-react';
 
 const navItems = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', exact: true },
+  { to: '/lobby', icon: Globe, label: 'Common Lobby' },
   { to: '/admin/lost-items', icon: Search, label: 'Lost Items' },
   { to: '/admin/found-items', icon: Package, label: 'Found Items' },
   { to: '/admin/ai-matches', icon: Sparkles, label: 'AI Matches' },
