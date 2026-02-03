@@ -12,7 +12,8 @@ import {
   Sparkles,
   UserCog,
   Building2,
-  Globe
+  Globe,
+  Folder
 } from 'lucide-react';
 
 const navItems = [
