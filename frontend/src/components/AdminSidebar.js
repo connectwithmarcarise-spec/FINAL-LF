@@ -1,5 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { 
   LayoutDashboard, 
   Search, 
@@ -13,8 +15,11 @@ import {
   UserCog,
   Building2,
   Globe,
-  Folder
+  Folder,
+  ClipboardCheck
 } from 'lucide-react';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const navItems = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', exact: true },
@@ -22,6 +27,7 @@ const navItems = [
   { to: '/admin/lost-items', icon: Search, label: 'Lost Items' },
   { to: '/admin/found-items', icon: Package, label: 'Found Items' },
   { to: '/admin/ai-matches', icon: Sparkles, label: 'AI Matches' },
+  { to: '/admin/claim-requests', icon: ClipboardCheck, label: 'Claim Requests', badge: true, highlight: true },
   { to: '/admin/claims', icon: Package, label: 'Claims' },
   { to: '/admin/students', icon: Users, label: 'Students' },
   { to: '/admin/messages', icon: MessageSquare, label: 'Messages' },
@@ -35,6 +41,25 @@ const superAdminItems = [
 export const AdminSidebar = () => {
   const { logout, isSuperAdmin, user } = useAuth();
   const navigate = useNavigate();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    fetchPendingCount();
+    const interval = setInterval(fetchPendingCount, 30000); // Refresh every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchPendingCount = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${BACKEND_URL}/api/claims?status=pending`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setPendingCount(response.data.length);
+    } catch (error) {
+      console.error('Failed to fetch pending claims count');
+    }
+  };
 
   const handleLogout = () => {
     logout();
