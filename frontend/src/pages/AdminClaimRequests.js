@@ -235,6 +235,15 @@ const AdminClaimRequests = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Back Button */}
+      <button 
+        onClick={() => navigate('/admin')}
+        className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back to Dashboard
+      </button>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 font-outfit flex items-center gap-3">
