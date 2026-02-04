@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { MapPin, Calendar, Clock, Eye, Trash2, Hand } from 'lucide-react';
+import { MapPin, Calendar, Clock, Eye, Trash2, Hand, AlertCircle, Package } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import {
