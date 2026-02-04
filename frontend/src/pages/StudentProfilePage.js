@@ -191,6 +191,19 @@ const StudentProfilePage = () => {
               You can only change your profile picture.
             </p>
           </div>
+
+          {/* Phase 2 - Item 8: Logout Button */}
+          <div className="pt-4 border-t border-slate-200">
+            <Button 
+              variant="outline" 
+              className="w-full text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+              onClick={handleLogout}
+              data-testid="logout-btn"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
