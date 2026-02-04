@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
@@ -30,9 +30,15 @@ import { Button } from './ui/button';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
+// Storage keys for viewed state
+const ADMIN_VIEWED_LOST_KEY = 'admin_viewed_lost';
+const ADMIN_VIEWED_FOUND_KEY = 'admin_viewed_found';
+const ADMIN_VIEWED_CLAIMS_KEY = 'admin_viewed_claims';
+
 /**
  * Admin Sidebar with:
  * - Real-time notification badges for Lost/Found items & Claims
+ * - Badge clears when user clicks on corresponding tab
  * - Logout confirmation dialog
  */
 
@@ -43,8 +49,10 @@ const superAdminItems = [
 export const AdminSidebar = () => {
   const { logout, isSuperAdmin, user, token } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [pendingCount, setPendingCount] = useState(0);
   const [itemCounts, setItemCounts] = useState({ lost: 0, found: 0 });
+  const [viewedCounts, setViewedCounts] = useState({ lost: 0, found: 0, claims: 0 });
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -73,12 +81,39 @@ export const AdminSidebar = () => {
     }
   }, [token]);
 
+  // Load viewed counts from localStorage
+  useEffect(() => {
+    const viewedLost = parseInt(localStorage.getItem(ADMIN_VIEWED_LOST_KEY) || '0', 10);
+    const viewedFound = parseInt(localStorage.getItem(ADMIN_VIEWED_FOUND_KEY) || '0', 10);
+    const viewedClaims = parseInt(localStorage.getItem(ADMIN_VIEWED_CLAIMS_KEY) || '0', 10);
+    setViewedCounts({ lost: viewedLost, found: viewedFound, claims: viewedClaims });
+  }, []);
+
   useEffect(() => {
     fetchCounts();
     // Refresh every 30 seconds for real-time updates
     const interval = setInterval(fetchCounts, 30000);
     return () => clearInterval(interval);
   }, [fetchCounts]);
+
+  // Clear badge when user visits the corresponding page
+  useEffect(() => {
+    if (location.pathname === '/admin/lost-items') {
+      localStorage.setItem(ADMIN_VIEWED_LOST_KEY, itemCounts.lost.toString());
+      setViewedCounts(prev => ({ ...prev, lost: itemCounts.lost }));
+    } else if (location.pathname === '/admin/found-items') {
+      localStorage.setItem(ADMIN_VIEWED_FOUND_KEY, itemCounts.found.toString());
+      setViewedCounts(prev => ({ ...prev, found: itemCounts.found }));
+    } else if (location.pathname === '/admin/claim-requests') {
+      localStorage.setItem(ADMIN_VIEWED_CLAIMS_KEY, pendingCount.toString());
+      setViewedCounts(prev => ({ ...prev, claims: pendingCount }));
+    }
+  }, [location.pathname, itemCounts, pendingCount]);
+
+  // Calculate new items (not yet viewed)
+  const newLostCount = Math.max(0, itemCounts.lost - viewedCounts.lost);
+  const newFoundCount = Math.max(0, itemCounts.found - viewedCounts.found);
+  const newClaimsCount = Math.max(0, pendingCount - viewedCounts.claims);
 
   const handleLogoutClick = () => {
     setShowLogoutDialog(true);
@@ -95,10 +130,10 @@ export const AdminSidebar = () => {
   const navItems = [
     { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', exact: true },
     { to: '/feed', icon: Megaphone, label: 'Campus Feed' },
-    { to: '/admin/lost-items', icon: Search, label: 'Lost Items', count: itemCounts.lost, color: 'orange' },
-    { to: '/admin/found-items', icon: Package, label: 'Found Items', count: itemCounts.found, color: 'emerald' },
+    { to: '/admin/lost-items', icon: Search, label: 'Lost Items', count: newLostCount, color: 'orange' },
+    { to: '/admin/found-items', icon: Package, label: 'Found Items', count: newFoundCount, color: 'emerald' },
     { to: '/admin/ai-matches', icon: Sparkles, label: 'AI Matches' },
-    { to: '/admin/claim-requests', icon: ClipboardCheck, label: 'Claim Requests', count: pendingCount, color: 'red', highlight: true },
+    { to: '/admin/claim-requests', icon: ClipboardCheck, label: 'Claim Requests', count: newClaimsCount, color: 'red', highlight: true },
     { to: '/admin/claims', icon: Package, label: 'Claims' },
     { to: '/admin/students', icon: Users, label: 'Students' },
     { to: '/admin/messages', icon: MessageSquare, label: 'Messages' },
@@ -142,7 +177,7 @@ export const AdminSidebar = () => {
             >
               <item.icon className="w-5 h-5 mr-3" />
               <span className="flex-1">{item.label}</span>
-              {/* Real-time count badge */}
+              {/* Badge only shows for NEW items not yet viewed */}
               {item.count > 0 && (
                 <span className={`min-w-[22px] h-[22px] flex items-center justify-center text-xs font-bold text-white rounded-full px-1.5 ${
                   item.color === 'orange' ? 'bg-orange-500' :
