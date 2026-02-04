@@ -62,8 +62,15 @@ const ReportFoundPage = () => {
       ? formData.custom_keyword 
       : formData.item_keyword;
 
-    if (!finalKeyword || !formData.description || !formData.location || !formData.approximate_time || !formData.secret_message || !image) {
-      toast.error('Please fill all required fields including Secret Identification Message and upload an image');
+    // DESIGN FIX: Image is now OPTIONAL
+    if (!finalKeyword || !formData.description || !formData.location || !formData.approximate_time || !formData.secret_message) {
+      toast.error('Please fill all required fields including Secret Identification Message');
+      return;
+    }
+
+    // Validate description quality - penalize vague inputs
+    if (formData.description.trim().length < 20) {
+      toast.error('Please provide a more detailed description (minimum 20 characters)');
       return;
     }
 
@@ -86,7 +93,10 @@ const ReportFoundPage = () => {
       data.append('location', formData.location);
       data.append('approximate_time', formData.approximate_time);
       data.append('secret_message', formData.secret_message);
-      data.append('image', image);
+      // DESIGN FIX: Only append image if provided
+      if (image) {
+        data.append('image', image);
+      }
 
       await itemsAPI.createItem(data);
       toast.success('Found item reported successfully!');
