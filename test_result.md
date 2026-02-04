@@ -314,15 +314,18 @@ frontend:
 
   - task: "Authenticated lobby route"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/src/App.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Lobby now requires auth via AuthenticatedRoute wrapper"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Common Lobby (/lobby) correctly requires authentication - redirects to landing page when not authenticated, loads successfully when authenticated"
 
   - task: "Role badge in header"
     implemented: true
