@@ -109,19 +109,28 @@ function AppRoutes() {
   const { isAuthenticated, isStudent, isAdmin } = useAuth();
   
   // Smart home redirect based on authentication
+  // DESIGN FIX: Unauthenticated users see LandingPage, not PublicPage
   const getHomeRedirect = () => {
     if (isAuthenticated) {
       if (isStudent) return <Navigate to="/student" replace />;
       if (isAdmin) return <Navigate to="/admin" replace />;
     }
-    return <PublicPage />;
+    return <LandingPage />;  // NEW: Landing page with login options only
   };
   
   return (
     <Routes>
-      {/* Public Routes */}
+      {/* Landing Page - No public browsing before login */}
       <Route path="/" element={getHomeRedirect()} />
-      <Route path="/lobby" element={<PublicPage />} />
+      
+      {/* Common Lobby - NOW REQUIRES AUTHENTICATION */}
+      <Route path="/lobby" element={
+        <AuthenticatedRoute>
+          <PublicPage />
+        </AuthenticatedRoute>
+      } />
+      
+      {/* Auth Routes */}
       <Route path="/student/login" element={<StudentLoginPage />} />
       <Route path="/admin/login" element={<AdminLoginPage />} />
 
