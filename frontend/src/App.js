@@ -4,7 +4,8 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Toaster } from "./components/ui/sonner";
 
 // Pages
-import PublicPage from "./pages/PublicPage";
+import LandingPage from "./pages/LandingPage";  // NEW: Landing page (no public lobby)
+import PublicPage from "./pages/PublicPage";  // Now requires auth
 import StudentLoginPage from "./pages/StudentLoginPage";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import StudentLayout from "./pages/StudentLayout";
@@ -44,6 +45,25 @@ const StudentRoute = ({ children }) => {
   
   if (!isAuthenticated || !isStudent) {
     return <Navigate to="/student/login" replace />;
+  }
+  
+  return children;
+};
+
+// NEW: Protected route for Common Lobby (requires any authentication)
+const AuthenticatedRoute = ({ children }) => {
+  const { isAuthenticated, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="spinner" />
+      </div>
+    );
+  }
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/" replace />;  // Redirect to landing page
   }
   
   return children;
