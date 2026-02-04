@@ -71,7 +71,7 @@ class NewFeaturesTester:
         
         response = self.make_request('POST', 'auth/admin/login', {
             "username": "superadmin",
-            "password": "#123321#"
+            "password": "SuperAdmin@123"
         })
         
         if response and response.status_code == 200:
