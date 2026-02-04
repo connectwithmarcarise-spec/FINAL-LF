@@ -4,8 +4,8 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Toaster } from "./components/ui/sonner";
 
 // Pages
-import LandingPage from "./pages/LandingPage";  // NEW: Landing page (no public lobby)
-import PublicPage from "./pages/PublicPage";  // Now requires auth
+import LandingPage from "./pages/LandingPage";
+import CampusFeed from "./pages/CampusFeed";  // NEW: Campus Feed replaces Common Lobby
 import StudentLoginPage from "./pages/StudentLoginPage";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import StudentLayout from "./pages/StudentLayout";
@@ -15,7 +15,7 @@ import StudentFoundItems from "./pages/StudentFoundItems";
 import ReportLostPage from "./pages/ReportLostPage";
 import ReportFoundPage from "./pages/ReportFoundPage";
 import AIClaimChat from "./components/AIClaimChat";
-import FoundResponsePage from "./pages/FoundResponsePage";  // NEW: I Found This for LOST items
+import FoundResponsePage from "./pages/FoundResponsePage";
 import MyItemsPage from "./pages/MyItemsPage";
 import StudentProfilePage from "./pages/StudentProfilePage";
 import NotificationsPage from "./pages/NotificationsPage";
