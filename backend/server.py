@@ -2641,6 +2641,255 @@ async def upload_excel_to_folder(
         "year": year
     }
 
+# ===================== CAMPUS NOTICE & APPRECIATION FEED =====================
+# Phase 2 - Item 2: Official campus feed to replace Common Lobby
+
+class FeedPostCreate(BaseModel):
+    title: str
+    description: str
+    image_url: Optional[str] = None
+    post_type: str = "announcement"  # announcement, appreciation, notice
+    comments_enabled: bool = True
+
+class FeedCommentCreate(BaseModel):
+    content: str
+
+@api_router.post("/feed/posts")
+async def create_feed_post(
+    title: str = Form(...),
+    description: str = Form(...),
+    post_type: str = Form("announcement"),
+    comments_enabled: bool = Form(True),
+    image: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(require_admin)
+):
+    """
+    Create a new feed post - ADMIN/SUPER ADMIN ONLY
+    Students can view and interact but cannot create posts.
+    """
+    post_id = str(uuid.uuid4())
+    image_url = None
+    
+    if image and image.filename:
+        if not image.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Only image files are allowed")
+        
+        ext = image.filename.split(".")[-1] if "." in image.filename else "jpg"
+        image_filename = f"feed_{post_id}.{ext}"
+        image_path = ITEMS_DIR / image_filename
+        
+        with open(image_path, "wb") as f:
+            content = await image.read()
+            f.write(content)
+        
+        image_url = f"/uploads/items/{image_filename}"
+    
+    now = datetime.now(timezone.utc)
+    
+    # Get admin info for display
+    admin = await db.admins.find_one({"id": current_user["sub"]}, {"_id": 0, "full_name": 1, "username": 1, "role": 1})
+    
+    post = {
+        "id": post_id,
+        "title": title,
+        "description": description,
+        "image_url": image_url,
+        "post_type": post_type,
+        "comments_enabled": comments_enabled,
+        "created_by": current_user["sub"],
+        "created_by_name": admin.get("full_name") if admin else "Admin",
+        "created_by_role": current_user.get("role", "admin"),
+        "created_at": now.isoformat(),
+        "likes": 0,
+        "liked_by": [],
+        "comments": [],
+        "is_deleted": False
+    }
+    
+    await db.feed_posts.insert_one(post)
+    
+    return {"message": "Post created successfully", "post_id": post_id}
+
+@api_router.get("/feed/posts")
+async def get_feed_posts(current_user: dict = Depends(get_current_user)):
+    """Get all feed posts - accessible to all authenticated users"""
+    posts = await db.feed_posts.find(
+        {"is_deleted": False},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    user_id = current_user.get("sub")
+    
+    # Enrich posts with like status and comment count
+    for post in posts:
+        post["is_liked_by_me"] = user_id in post.get("liked_by", [])
+        post["comment_count"] = len(post.get("comments", []))
+        
+        # Get recent comments with author info
+        comments = post.get("comments", [])[:5]
+        enriched_comments = []
+        for comment in comments:
+            if not comment.get("is_deleted"):
+                # Get commenter info
+                commenter = await db.students.find_one(
+                    {"id": comment["author_id"]},
+                    {"_id": 0, "full_name": 1, "department": 1, "year": 1}
+                )
+                enriched_comments.append({
+                    **comment,
+                    "author": commenter or {"full_name": "Anonymous"}
+                })
+        post["recent_comments"] = enriched_comments
+    
+    return posts
+
+@api_router.get("/feed/posts/{post_id}")
+async def get_feed_post(post_id: str, current_user: dict = Depends(get_current_user)):
+    """Get single feed post with all comments"""
+    post = await db.feed_posts.find_one({"id": post_id, "is_deleted": False}, {"_id": 0})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    user_id = current_user.get("sub")
+    post["is_liked_by_me"] = user_id in post.get("liked_by", [])
+    
+    # Get all comments with author info
+    enriched_comments = []
+    for comment in post.get("comments", []):
+        if not comment.get("is_deleted"):
+            commenter = await db.students.find_one(
+                {"id": comment["author_id"]},
+                {"_id": 0, "full_name": 1, "department": 1, "year": 1}
+            )
+            enriched_comments.append({
+                **comment,
+                "author": commenter or {"full_name": "Anonymous"}
+            })
+    post["comments"] = enriched_comments
+    
+    return post
+
+@api_router.put("/feed/posts/{post_id}")
+async def update_feed_post(
+    post_id: str,
+    title: str = Form(None),
+    description: str = Form(None),
+    comments_enabled: bool = Form(None),
+    current_user: dict = Depends(require_admin)
+):
+    """Update feed post - ADMIN/SUPER ADMIN ONLY"""
+    post = await db.feed_posts.find_one({"id": post_id})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if title is not None:
+        update_data["title"] = title
+    if description is not None:
+        update_data["description"] = description
+    if comments_enabled is not None:
+        update_data["comments_enabled"] = comments_enabled
+    
+    await db.feed_posts.update_one({"id": post_id}, {"$set": update_data})
+    return {"message": "Post updated successfully"}
+
+@api_router.delete("/feed/posts/{post_id}")
+async def delete_feed_post(post_id: str, current_user: dict = Depends(require_admin)):
+    """Delete feed post - ADMIN/SUPER ADMIN ONLY"""
+    result = await db.feed_posts.update_one(
+        {"id": post_id},
+        {"$set": {"is_deleted": True, "deleted_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return {"message": "Post deleted successfully"}
+
+@api_router.post("/feed/posts/{post_id}/like")
+async def like_feed_post(post_id: str, current_user: dict = Depends(get_current_user)):
+    """Like/Unlike a feed post - ALL AUTHENTICATED USERS"""
+    post = await db.feed_posts.find_one({"id": post_id, "is_deleted": False})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    user_id = current_user.get("sub")
+    liked_by = post.get("liked_by", [])
+    
+    if user_id in liked_by:
+        # Unlike
+        liked_by.remove(user_id)
+        action = "unliked"
+    else:
+        # Like
+        liked_by.append(user_id)
+        action = "liked"
+    
+    await db.feed_posts.update_one(
+        {"id": post_id},
+        {"$set": {"liked_by": liked_by, "likes": len(liked_by)}}
+    )
+    
+    return {"message": f"Post {action}", "likes": len(liked_by), "is_liked": action == "liked"}
+
+@api_router.post("/feed/posts/{post_id}/comments")
+async def add_feed_comment(
+    post_id: str,
+    data: FeedCommentCreate,
+    current_user: dict = Depends(require_student)
+):
+    """Add comment to feed post - STUDENTS ONLY (Admin comments via messages)"""
+    post = await db.feed_posts.find_one({"id": post_id, "is_deleted": False})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    if not post.get("comments_enabled", True):
+        raise HTTPException(status_code=400, detail="Comments are disabled for this post")
+    
+    comment = {
+        "id": str(uuid.uuid4()),
+        "content": data.content,
+        "author_id": current_user.get("sub"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "is_deleted": False
+    }
+    
+    await db.feed_posts.update_one(
+        {"id": post_id},
+        {"$push": {"comments": comment}}
+    )
+    
+    return {"message": "Comment added", "comment_id": comment["id"]}
+
+@api_router.delete("/feed/posts/{post_id}/comments/{comment_id}")
+async def delete_feed_comment(
+    post_id: str,
+    comment_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete comment - ADMIN/SUPER ADMIN can delete any, students only their own"""
+    post = await db.feed_posts.find_one({"id": post_id})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    # Find the comment
+    comment = next((c for c in post.get("comments", []) if c["id"] == comment_id), None)
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    # Check permissions
+    is_admin = current_user.get("role") in ["admin", "super_admin"]
+    is_author = comment["author_id"] == current_user.get("sub")
+    
+    if not is_admin and not is_author:
+        raise HTTPException(status_code=403, detail="You can only delete your own comments")
+    
+    # Soft delete the comment
+    await db.feed_posts.update_one(
+        {"id": post_id, "comments.id": comment_id},
+        {"$set": {"comments.$.is_deleted": True}}
+    )
+    
+    return {"message": "Comment deleted"}
+
 # ===================== DASHBOARD STATS =====================
 
 @api_router.get("/stats")
@@ -2651,6 +2900,7 @@ async def get_stats(current_user: dict = Depends(require_admin)):
     pending_claims = await db.claims.count_documents({"status": {"$in": ["pending", "under_review"]}})
     resolved_items = await db.items.count_documents({"status": "claimed"})
     deleted_items = await db.items.count_documents({"is_deleted": True})
+    feed_posts = await db.feed_posts.count_documents({"is_deleted": False})
     
     return {
         "total_students": total_students,
@@ -2658,7 +2908,8 @@ async def get_stats(current_user: dict = Depends(require_admin)):
         "total_found": total_found,
         "pending_claims": pending_claims,
         "resolved_items": resolved_items,
-        "deleted_items": deleted_items
+        "deleted_items": deleted_items,
+        "feed_posts": feed_posts
     }
 
 # ===================== HEALTH CHECK =====================
