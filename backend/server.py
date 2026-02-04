@@ -1900,6 +1900,10 @@ async def react_to_message(message_id: str, reaction: str, current_user: dict = 
 
 @api_router.get("/messages")
 async def get_messages(current_user: dict = Depends(get_current_user)):
+    """
+    Get messages for current user.
+    FIX B: Auto-mark messages as seen when fetched (real-world behavior).
+    """
     if current_user["role"] == "student":
         query = {"recipient_id": current_user["sub"], "recipient_type": "student"}
     else:
@@ -1909,6 +1913,27 @@ async def get_messages(current_user: dict = Depends(get_current_user)):
         ]}
     
     messages = await db.messages.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    
+    # FIX B: AUTO-MARK AS SEEN when student views messages
+    # This is real-world behavior - viewing = seen
+    now = datetime.now(timezone.utc)
+    if current_user["role"] == "student":
+        unread_ids = [m["id"] for m in messages if not m.get("is_read")]
+        if unread_ids:
+            await db.messages.update_many(
+                {"id": {"$in": unread_ids}, "recipient_id": current_user["sub"]},
+                {
+                    "$set": {
+                        "is_read": True,
+                        "seen_at": now.isoformat()  # FIX B: Track when seen
+                    }
+                }
+            )
+            # Update local data for response
+            for msg in messages:
+                if msg["id"] in unread_ids:
+                    msg["is_read"] = True
+                    msg["seen_at"] = now.isoformat()
     
     # Enrich messages with sender and recipient details
     for msg in messages:
