@@ -117,3 +117,17 @@ export const statsAPI = {
 export const aiAPI = {
   getMatches: () => api.get('/ai/matches')
 };
+
+// Campus Feed APIs (NEW - Phase 2)
+export const feedAPI = {
+  getPosts: () => api.get('/feed/posts'),
+  getPost: (id) => api.get(`/feed/posts/${id}`),
+  createPost: (formData) => api.post('/feed/posts', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  updatePost: (id, formData) => api.put(`/feed/posts/${id}`, formData),
+  deletePost: (id) => api.delete(`/feed/posts/${id}`),
+  likePost: (id) => api.post(`/feed/posts/${id}/like`),
+  addComment: (postId, content) => api.post(`/feed/posts/${postId}/comments`, { content }),
+  deleteComment: (postId, commentId) => api.delete(`/feed/posts/${postId}/comments/${commentId}`)
+};
