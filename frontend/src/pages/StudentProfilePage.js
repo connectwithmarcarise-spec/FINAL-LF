@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { studentAPI } from '../services/api';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
-import { User, Camera, Mail, Phone, GraduationCap, Calendar, Hash } from 'lucide-react';
+import { User, Camera, Mail, Phone, GraduationCap, Calendar, Hash, LogOut } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const StudentProfilePage = () => {
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -49,6 +51,13 @@ const StudentProfilePage = () => {
     } finally {
       setUploading(false);
     }
+  };
+
+  // Phase 2 - Item 8: Logout handler
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+    toast.success('Logged out successfully');
   };
 
   if (loading) {
