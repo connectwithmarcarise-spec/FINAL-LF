@@ -258,6 +258,29 @@ frontend:
     status_history:
       - working: "NA"
         agent: "main"
+
+  - task: "AIClaimChat item_id propagation fix"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/AIClaimChat.js"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "BUG REPORT: Users reach AI submission step but get 'Item not found' error"
+      - working: "NA"
+        agent: "main"
+        comment: |
+          ROOT CAUSE IDENTIFIED: AIClaimChat expected itemId as prop but route passes it as URL param.
+          FIX APPLIED:
+          1. Added useParams() to extract itemId from URL
+          2. Added useEffect to validate item exists and is FOUND type before allowing claim
+          3. Added loading/error states for unavailable items
+          4. Added item preview card showing what's being claimed
+          5. Pre-submission validation checks item_id is present
+          6. Better error handling with redirect on 404
         comment: "New landing page with Student/Admin login only, no public lobby"
 
   - task: "Authenticated lobby route"
