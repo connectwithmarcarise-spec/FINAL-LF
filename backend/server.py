@@ -2014,17 +2014,148 @@ async def mark_all_read(current_user: dict = Depends(get_current_user)):
     return {"message": "All messages marked as read"}
 
 # ===================== AI MATCHING =====================
+# FIX #5: AI Matching was always returning 0% because status query was wrong
+
+def calculate_text_similarity(text1: str, text2: str) -> float:
+    """Calculate text similarity using word overlap - fallback when AI unavailable"""
+    if not text1 or not text2:
+        return 0.0
+    
+    words1 = set(text1.lower().split())
+    words2 = set(text2.lower().split())
+    
+    if not words1 or not words2:
+        return 0.0
+    
+    # Jaccard similarity
+    intersection = len(words1.intersection(words2))
+    union = len(words1.union(words2))
+    
+    return (intersection / union) * 100 if union > 0 else 0.0
+
+def calculate_location_similarity(loc1: str, loc2: str) -> float:
+    """Calculate location similarity"""
+    if not loc1 or not loc2:
+        return 0.0
+    
+    loc1 = loc1.lower()
+    loc2 = loc2.lower()
+    
+    # Common campus locations
+    campus_areas = ["library", "cafeteria", "canteen", "lab", "classroom", "ground", "parking", 
+                   "entrance", "gate", "block", "floor", "corridor", "auditorium", "hostel"]
+    
+    # Check if same area
+    for area in campus_areas:
+        if area in loc1 and area in loc2:
+            return 70.0
+    
+    # Word overlap
+    return calculate_text_similarity(loc1, loc2)
+
+def calculate_match_score(lost_item: dict, found_item: dict) -> dict:
+    """Calculate match score between lost and found items using multiple criteria"""
+    scores = {}
+    reasons = []
+    
+    # 1. Item keyword/category match (30% weight)
+    lost_keyword = (lost_item.get("item_keyword") or "").lower()
+    found_keyword = (found_item.get("item_keyword") or "").lower()
+    
+    if lost_keyword and found_keyword:
+        if lost_keyword == found_keyword:
+            scores["category"] = 100
+            reasons.append(f"Category match: {found_keyword}")
+        elif lost_keyword in found_keyword or found_keyword in lost_keyword:
+            scores["category"] = 70
+            reasons.append(f"Partial category match")
+        else:
+            scores["category"] = 0
+    else:
+        scores["category"] = 0
+    
+    # 2. Description similarity (35% weight)
+    lost_desc = lost_item.get("description", "")
+    found_desc = found_item.get("description", "")
+    
+    desc_score = calculate_text_similarity(lost_desc, found_desc)
+    scores["description"] = desc_score
+    if desc_score > 40:
+        reasons.append(f"Description similarity: {desc_score:.0f}%")
+    
+    # 3. Location proximity (20% weight)
+    lost_loc = lost_item.get("location", "")
+    found_loc = found_item.get("location", "")
+    
+    loc_score = calculate_location_similarity(lost_loc, found_loc)
+    scores["location"] = loc_score
+    if loc_score > 30:
+        reasons.append(f"Location proximity: {found_loc}")
+    
+    # 4. Date/Time closeness (15% weight)
+    lost_date = lost_item.get("created_date", "")
+    found_date = found_item.get("created_date", "")
+    
+    if lost_date and found_date:
+        try:
+            from datetime import datetime as dt
+            lost_dt = dt.strptime(lost_date, "%Y-%m-%d")
+            found_dt = dt.strptime(found_date, "%Y-%m-%d")
+            days_diff = abs((found_dt - lost_dt).days)
+            
+            if days_diff == 0:
+                scores["date"] = 100
+                reasons.append("Same day")
+            elif days_diff <= 1:
+                scores["date"] = 80
+            elif days_diff <= 3:
+                scores["date"] = 60
+            elif days_diff <= 7:
+                scores["date"] = 40
+            else:
+                scores["date"] = max(0, 20 - days_diff)
+        except:
+            scores["date"] = 0
+    else:
+        scores["date"] = 0
+    
+    # Calculate weighted total
+    total = (
+        scores.get("category", 0) * 0.30 +
+        scores.get("description", 0) * 0.35 +
+        scores.get("location", 0) * 0.20 +
+        scores.get("date", 0) * 0.15
+    )
+    
+    return {
+        "confidence": round(total, 1),
+        "scores": scores,
+        "reason": " | ".join(reasons) if reasons else "Low similarity"
+    }
 
 @api_router.get("/ai/matches")
 async def get_ai_matches(current_user: dict = Depends(require_admin)):
-    """Get AI-suggested matches between lost and found items"""
+    """
+    Get AI-suggested matches between lost and found items.
+    FIX #5: Fixed query - items are stored with status "reported" NOT "active"
+    Now includes fallback algorithm when AI is unavailable.
+    """
+    # FIX: Query uses correct statuses - "reported", "active", "found_reported"
     lost_items = await db.items.find(
-        {"item_type": "lost", "is_deleted": False, "status": "active"},
+        {
+            "item_type": "lost", 
+            "is_deleted": False, 
+            "status": {"$in": ["reported", "active", "found_reported"]}
+        },
         {"_id": 0}
     ).to_list(100)
     
     found_items = await db.items.find(
-        {"item_type": "found", "is_deleted": False, "status": "active"},
+        {
+            "item_type": "found", 
+            "is_deleted": False, 
+            "status": {"$in": ["reported", "active"]}
+        },
         {"_id": 0}
     ).to_list(100)
     
@@ -2032,31 +2163,47 @@ async def get_ai_matches(current_user: dict = Depends(require_admin)):
         return {"matches": [], "message": "Not enough items to match"}
     
     matches = []
+    ai_available = False
     
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         
         api_key = os.environ.get("EMERGENT_LLM_KEY")
-        if not api_key:
-            return {"matches": [], "message": "AI service not configured"}
-        
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=f"matching_{datetime.now().timestamp()}",
-            system_message="""You are an AI assistant helping match lost items with found items in a campus lost and found system.
-            Compare items based on description, location, date, and time.
-            Return ONLY valid JSON array with matches. Each match should have:
-            - lost_id: ID of the lost item
-            - found_id: ID of the found item
-            - confidence: Score from 0 to 100
-            - reason: Brief explanation of why they might match
-            Only include matches with confidence >= 50."""
-        ).with_model("openai", "gpt-5.2")
-        
-        lost_summary = [{"id": i["id"], "desc": i["description"], "loc": i["location"], "date": i["date"]} for i in lost_items[:20]]
-        found_summary = [{"id": i["id"], "desc": i["description"], "loc": i["location"], "date": i["date"]} for i in found_items[:20]]
-        
-        prompt = f"""Match these lost items with found items:
+        if api_key:
+            ai_available = True
+            chat = LlmChat(
+                api_key=api_key,
+                session_id=f"matching_{datetime.now().timestamp()}",
+                system_message="""You are an AI assistant helping match lost items with found items in a campus lost and found system.
+                Compare items based on description, location, date, and time.
+                Return ONLY valid JSON array with matches. Each match should have:
+                - lost_id: ID of the lost item
+                - found_id: ID of the found item
+                - confidence: Score from 0 to 100
+                - reason: Brief explanation of why they might match
+                Only include matches with confidence >= 30."""
+            )
+            
+            # Prepare item summaries with all available data
+            lost_summary = [{
+                "id": i["id"], 
+                "keyword": i.get("item_keyword", ""),
+                "desc": i.get("description", ""), 
+                "loc": i.get("location", ""), 
+                "date": i.get("created_date", ""),
+                "time": i.get("approximate_time", "")
+            } for i in lost_items[:20]]
+            
+            found_summary = [{
+                "id": i["id"], 
+                "keyword": i.get("item_keyword", ""),
+                "desc": i.get("description", ""), 
+                "loc": i.get("location", ""), 
+                "date": i.get("created_date", ""),
+                "time": i.get("approximate_time", "")
+            } for i in found_items[:20]]
+            
+            prompt = f"""Match these lost items with found items based on similarity:
 
 LOST ITEMS:
 {json.dumps(lost_summary, indent=2)}
@@ -2064,42 +2211,77 @@ LOST ITEMS:
 FOUND ITEMS:
 {json.dumps(found_summary, indent=2)}
 
-Return ONLY a JSON array of matches with confidence scores."""
-        
-        response = await chat.send_message(UserMessage(text=prompt))
-        
-        # Parse response
-        try:
-            # Try to extract JSON from response
+Consider: item type/keyword, description details, location proximity, and date closeness.
+Return ONLY a JSON array of matches with confidence scores (0-100)."""
+            
+            response = chat.send_user_message(UserMessage(content=prompt))
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            
+            # Parse response
             import re
-            json_match = re.search(r'\[.*\]', response, re.DOTALL)
+            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
             if json_match:
                 matches_data = json.loads(json_match.group())
                 for match in matches_data:
-                    if match.get("confidence", 0) >= 50:
+                    if match.get("confidence", 0) >= 30:
                         lost_item = next((i for i in lost_items if i["id"] == match["lost_id"]), None)
                         found_item = next((i for i in found_items if i["id"] == match["found_id"]), None)
                         if lost_item and found_item:
-                            # Get student info
-                            lost_student = await db.students.find_one({"id": lost_item["student_id"]}, {"_id": 0, "full_name": 1, "roll_number": 1})
-                            found_student = await db.students.find_one({"id": found_item["student_id"]}, {"_id": 0, "full_name": 1, "roll_number": 1})
+                            lost_student = await db.students.find_one(
+                                {"id": lost_item["student_id"]}, 
+                                {"_id": 0, "full_name": 1, "roll_number": 1}
+                            )
+                            found_student = await db.students.find_one(
+                                {"id": found_item["student_id"]}, 
+                                {"_id": 0, "full_name": 1, "roll_number": 1}
+                            )
                             
                             matches.append({
                                 "lost_item": {**lost_item, "student": lost_student},
                                 "found_item": {**found_item, "student": found_student},
                                 "confidence": match.get("confidence", 0),
-                                "reason": match.get("reason", "")
+                                "reason": match.get("reason", "AI-detected similarity"),
+                                "ai_powered": True
                             })
-        except json.JSONDecodeError:
-            logging.error(f"Failed to parse AI response: {response}")
     
     except Exception as e:
         logging.error(f"AI matching error: {str(e)}")
-        return {"matches": [], "message": f"AI matching temporarily unavailable"}
+        ai_available = False
     
-    # Sort by confidence
+    # FALLBACK: Use algorithmic matching if AI failed or no matches found
+    if not matches:
+        logging.info("Using algorithmic matching fallback")
+        for lost_item in lost_items[:20]:
+            for found_item in found_items[:20]:
+                result = calculate_match_score(lost_item, found_item)
+                
+                if result["confidence"] >= 30:
+                    lost_student = await db.students.find_one(
+                        {"id": lost_item["student_id"]}, 
+                        {"_id": 0, "full_name": 1, "roll_number": 1}
+                    )
+                    found_student = await db.students.find_one(
+                        {"id": found_item["student_id"]}, 
+                        {"_id": 0, "full_name": 1, "roll_number": 1}
+                    )
+                    
+                    matches.append({
+                        "lost_item": {**lost_item, "student": lost_student},
+                        "found_item": {**found_item, "student": found_student},
+                        "confidence": result["confidence"],
+                        "reason": result["reason"],
+                        "ai_powered": False
+                    })
+    
+    # Sort by confidence and limit results
     matches.sort(key=lambda x: x["confidence"], reverse=True)
-    return {"matches": matches}
+    matches = matches[:20]  # Limit to top 20 matches
+    
+    return {
+        "matches": matches,
+        "message": f"Found {len(matches)} potential matches" if matches else "No matches found",
+        "ai_available": ai_available
+    }
 
 # ===================== ADMIN MANAGEMENT =====================
 
