@@ -48,18 +48,24 @@ class CampusLostFoundTester:
         
         try:
             if method == 'GET':
-                response = requests.get(url, headers=default_headers)
+                response = requests.get(url, headers=default_headers, timeout=30)
             elif method == 'POST':
                 if files:
-                    response = requests.post(url, files=files, headers=default_headers)
+                    response = requests.post(url, files=files, headers=default_headers, timeout=30)
                 else:
-                    response = requests.post(url, json=data, headers=default_headers)
+                    response = requests.post(url, json=data, headers=default_headers, timeout=30)
             elif method == 'DELETE':
-                response = requests.delete(url, headers=default_headers)
+                response = requests.delete(url, headers=default_headers, timeout=30)
             
             return response
+        except requests.exceptions.Timeout:
+            print(f"Request timeout for {method} {endpoint}")
+            return None
+        except requests.exceptions.ConnectionError:
+            print(f"Connection error for {method} {endpoint}")
+            return None
         except Exception as e:
-            print(f"Request error: {str(e)}")
+            print(f"Request error for {method} {endpoint}: {str(e)}")
             return None
 
     # ===================== REDESIGNED SYSTEM TESTS =====================
