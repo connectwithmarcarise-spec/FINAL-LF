@@ -14,7 +14,7 @@ import {
   Sparkles,
   UserCog,
   Building2,
-  Globe,
+  Megaphone,
   Folder,
   ClipboardCheck
 } from 'lucide-react';
@@ -23,7 +23,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const navItems = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', exact: true },
-  { to: '/lobby', icon: Globe, label: 'Common Lobby' },
+  { to: '/feed', icon: Megaphone, label: 'Campus Feed' },  // Changed from Common Lobby
   { to: '/admin/lost-items', icon: Search, label: 'Lost Items' },
   { to: '/admin/found-items', icon: Package, label: 'Found Items' },
   { to: '/admin/ai-matches', icon: Sparkles, label: 'AI Matches' },
