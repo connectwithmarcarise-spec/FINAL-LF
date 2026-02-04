@@ -299,16 +299,16 @@ const PublicPage = () => {
             </h1>
             
             {/* Role-aware header text */}
-            {isAuthenticated && getRoleDisplay() ? (
+            {isAuthenticated ? (
               <div className="mb-6 animate-fade-in">
                 <div className="inline-block bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg px-4 py-2">
                   <p className="text-sm text-white/80">You are logged in as:</p>
-                  <p className="text-lg font-semibold text-white">{getRoleDisplay()}</p>
+                  <p className="text-lg font-semibold text-white capitalize">{role?.replace('_', ' ') || 'User'}</p>
                 </div>
               </div>
             ) : (
               <p className="text-lg text-slate-300 mb-6 animate-fade-in">
-                Browse all lost and found items from the campus community. Report what you've lost or found to help others.
+                Browse all lost and found items from the campus community.
               </p>
             )}
             
