@@ -15,6 +15,7 @@ import StudentFoundItems from "./pages/StudentFoundItems";
 import ReportLostPage from "./pages/ReportLostPage";
 import ReportFoundPage from "./pages/ReportFoundPage";
 import AIClaimChat from "./components/AIClaimChat";
+import FoundResponsePage from "./pages/FoundResponsePage";  // NEW: I Found This for LOST items
 import MyItemsPage from "./pages/MyItemsPage";
 import StudentProfilePage from "./pages/StudentProfilePage";
 import NotificationsPage from "./pages/NotificationsPage";
