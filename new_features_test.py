@@ -320,7 +320,8 @@ class NewFeaturesTester:
         response = self.make_request('GET', 'ai/matches', token=self.admin_token)
         
         if response and response.status_code == 200:
-            matches = response.json()
+            data = response.json()
+            matches = data.get('matches', [])
             is_list = isinstance(matches, list)
             has_matches = len(matches) > 0 if is_list else False
             
@@ -329,11 +330,9 @@ class NewFeaturesTester:
             if has_matches:
                 for match in matches:
                     confidence = match.get('confidence', 0)
-                    percentage = match.get('percentage', 0)
-                    match_score = match.get('match_score', 0)
                     
-                    # Check if any confidence metric is non-zero
-                    if confidence > 0 or percentage > 0 or match_score > 0:
+                    # Check if confidence is non-zero
+                    if confidence > 0:
                         non_zero_matches += 1
             
             success = has_matches and non_zero_matches > 0
@@ -354,19 +353,24 @@ class NewFeaturesTester:
         response = self.make_request('GET', 'ai/matches', token=self.admin_token)
         
         if response and response.status_code == 200:
-            matches = response.json()
+            data = response.json()
+            matches = data.get('matches', [])
             is_list = isinstance(matches, list)
+            ai_available = data.get('ai_available', False)
             
-            # Even if AI is unavailable, fallback should return structured data
+            # Check if fallback algorithm is working
             success = is_list
             if is_list and len(matches) > 0:
                 # Check if matches have required structure
                 sample_match = matches[0]
-                has_structure = 'item_id' in sample_match and ('confidence' in sample_match or 'match_score' in sample_match)
+                has_structure = all(key in sample_match for key in ['lost_item', 'found_item', 'confidence', 'reason'])
                 success = success and has_structure
             
+            # If AI is not available, fallback should still work
+            fallback_working = not ai_available and len(matches) > 0
+            
             self.log_result("AI Matching - Fallback Algorithm", success,
-                          f"Matches returned: {len(matches) if is_list else 0}, Has structure: {success}")
+                          f"Matches returned: {len(matches) if is_list else 0}, AI available: {ai_available}, Fallback working: {fallback_working}")
             return True
         else:
             error_msg = response.json().get('detail', 'Unknown error') if response else 'No response'
