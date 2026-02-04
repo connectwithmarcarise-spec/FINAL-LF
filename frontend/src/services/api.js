@@ -83,6 +83,10 @@ export const messagesAPI = {
 export const studentsAPI = {
   getStudents: () => api.get('/students'),
   getStudent: (id) => api.get(`/students/${id}`),
+  // NEW: Context-based student retrieval (Department + Year)
+  getStudentsByContext: (department, year) => 
+    api.get(`/students/by-context?department=${encodeURIComponent(department)}&year=${encodeURIComponent(year)}`),
+  getContexts: () => api.get('/students/contexts'),
   uploadExcel: (file) => {
     const formData = new FormData();
     formData.append('file', file);
