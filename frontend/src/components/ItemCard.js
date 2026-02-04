@@ -25,7 +25,8 @@ export const ItemCard = ({
   onDelete, 
   onView,
   onUpdate,
-  showStudent = false 
+  showStudent = false,
+  currentUserId = null  // FIX #3: Pass current user ID to check ownership
 }) => {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showClaimDialog, setShowClaimDialog] = useState(false);
@@ -33,6 +34,9 @@ export const ItemCard = ({
   const [claimDetails, setClaimDetails] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [claiming, setClaiming] = useState(false);
+
+  // FIX #3: Determine if current user is the owner
+  const isOwner = item.is_owner === true || (currentUserId && item.student_id === currentUserId);
 
   const handleDelete = async () => {
     if (!deleteReason.trim()) return;
