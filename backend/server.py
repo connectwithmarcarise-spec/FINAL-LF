@@ -1210,11 +1210,30 @@ async def create_ai_powered_claim(
     proof_image: UploadFile = File(None),
     current_user: dict = Depends(require_student)
 ):
-    """Create a claim with AI similarity analysis"""
+    """
+    Create a claim with AI advisory analysis.
+    IMPORTANT: AI is ADVISORY ONLY - it does NOT approve/reject claims.
+    AI returns confidence bands (LOW/MEDIUM/HIGH), NOT percentages.
+    This is ONLY for FOUND items (ownership verification).
+    """
     # Get the item being claimed
     item = await db.items.find_one({"id": item_id, "is_deleted": False})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    
+    # SEMANTIC FIX: AI claims only for FOUND items
+    if item["item_type"] != "found":
+        raise HTTPException(
+            status_code=400, 
+            detail="AI-powered claims are only for FOUND items. For LOST items, use 'I Found This' instead."
+        )
+    
+    # Prevent owner from claiming their own found item report
+    if item["student_id"] == current_user["sub"]:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot claim an item you reported as found"
+        )
     
     # Check for existing pending claim
     existing_claim = await db.claims.find_one({
@@ -1225,9 +1244,33 @@ async def create_ai_powered_claim(
     if existing_claim:
         raise HTTPException(status_code=400, detail="You already have a pending claim for this item")
     
-    # Handle proof image upload
+    # Rate limiting: Max 5 claims per user per day
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    claims_today = await db.claims.count_documents({
+        "claimant_id": current_user["sub"],
+        "created_at": {"$gte": today_start.isoformat()}
+    })
+    if claims_today >= 5:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Maximum 5 claims per day."
+        )
+    
+    # PENALIZE VAGUE INPUTS - minimum quality requirements
+    if len(description.strip()) < 15:
+        raise HTTPException(
+            status_code=400,
+            detail="Description too vague. Please provide more details (minimum 15 characters)."
+        )
+    if len(identification_marks.strip()) < 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Identification marks too vague. Please describe unique features."
+        )
+    
+    # Handle proof image upload (OPTIONAL)
     proof_image_url = None
-    if proof_image:
+    if proof_image and proof_image.filename:
         if not proof_image.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Only image files allowed for proof")
         
@@ -1259,9 +1302,14 @@ async def create_ai_powered_claim(
         "created_date": item.get("created_date", "")
     }
     
-    # Perform AI similarity analysis
-    ai_analysis = {"match_percentage": 0, "reasoning": "AI analysis not available"}
+    # Perform AI advisory analysis - CONFIDENCE BANDS, NOT PERCENTAGES
+    ai_analysis = {
+        "confidence_band": "LOW",
+        "reasoning": "AI analysis not available",
+        "advisory_note": "This is advisory only. Admin will make the final decision."
+    }
     verification_questions = []
+    internal_score = 0  # Internal only, not shown to user
     
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -1305,19 +1353,28 @@ Return ONLY a JSON array of question strings. Be specific and detailed."""
                         "Where exactly did you lose this item?"
                     ]
             
-            # Second: Perform similarity analysis
+            # Second: Perform similarity analysis for ADVISORY purposes only
             chat = LlmChat(
                 api_key=api_key,
                 session_id=f"claim_analysis_{item_id}_{current_user['sub']}_{datetime.now().timestamp()}",
-                system_message="""You are an AI assistant analyzing claim similarity for a campus lost & found system.
+                system_message="""You are an AI assistant providing ADVISORY analysis for a campus lost & found system.
+                Your analysis is ADVISORY ONLY - you do NOT make approval decisions.
                 Compare the student's claim details with the found item details.
                 Analyze: product type, description match, identification marks, location proximity, date/time correlation.
+                
+                IMPORTANT: Return a confidence band (LOW, MEDIUM, or HIGH), NOT a percentage.
+                LOW = Many mismatches, inconsistent details
+                MEDIUM = Some matches, needs verification
+                HIGH = Strong matches, details align well
+                
                 Return ONLY a valid JSON object with:
                 {
-                  "match_percentage": <number 0-100>,
-                  "reasoning": "<brief explanation of similarity analysis>"
+                  "internal_score": <number 0-100 for internal use>,
+                  "confidence_band": "LOW" | "MEDIUM" | "HIGH",
+                  "reasoning": "<brief explanation>",
+                  "inconsistencies": ["list of detected inconsistencies if any"]
                 }
-                Be strict. Only give high scores (>80) for strong matches."""
+                Be strict and flag any inconsistencies in time/location."""
             )
             
             prompt = f"""Analyze similarity between this claim and found item:
@@ -1336,7 +1393,7 @@ STUDENT CLAIM:
 - Lost Location: {claim_data['lost_location']}
 - Approximate Date: {claim_data['approximate_date']}
 
-Return JSON with match_percentage (0-100) and reasoning."""
+Return JSON with confidence_band (LOW/MEDIUM/HIGH), reasoning, and inconsistencies."""
 
             response = chat.send_user_message(UserMessage(content=prompt))
             response_text = response.content.strip()
@@ -1347,21 +1404,37 @@ Return JSON with match_percentage (0-100) and reasoning."""
             elif "```" in response_text:
                 response_text = response_text.split("```")[1].split("```")[0].strip()
             
-            ai_analysis = json.loads(response_text)
+            parsed_response = json.loads(response_text)
+            internal_score = parsed_response.get("internal_score", 0)
+            
+            # Convert to confidence band if AI returned percentage
+            if "confidence_band" not in parsed_response:
+                confidence_band = get_confidence_band(internal_score)
+            else:
+                confidence_band = parsed_response.get("confidence_band", "LOW")
+            
+            ai_analysis = {
+                "confidence_band": confidence_band,
+                "reasoning": parsed_response.get("reasoning", ""),
+                "inconsistencies": parsed_response.get("inconsistencies", []),
+                "advisory_note": "⚠️ This is ADVISORY ONLY. The admin will review and make the final decision."
+            }
             logging.info(f"AI claim analysis: {ai_analysis}")
     
     except Exception as e:
         logging.error(f"AI analysis failed: {str(e)}")
         ai_analysis = {
-            "match_percentage": 0,
-            "reasoning": f"AI analysis unavailable: {str(e)}"
+            "confidence_band": "LOW",
+            "reasoning": "AI analysis could not be completed",
+            "inconsistencies": [],
+            "advisory_note": "⚠️ This is ADVISORY ONLY. The admin will review and make the final decision."
         }
         verification_questions = [
             "Can you describe any unique features or marks on the item?",
             "Where exactly did you lose this item?"
         ]
     
-    # Create claim with AI analysis and verification questions
+    # Create claim with AI advisory analysis
     claim = {
         "id": str(uuid.uuid4()),
         "item_id": item_id,
@@ -1370,7 +1443,8 @@ Return JSON with match_percentage (0-100) and reasoning."""
         "claim_data": claim_data,
         "proof_image_url": proof_image_url,
         "ai_analysis": ai_analysis,
-        "verification_questions": verification_questions,  # Generated from secret_message
+        "ai_internal_score": internal_score,  # Hidden from students, visible to admins
+        "verification_questions": verification_questions,
         "verification_answers": [],
         "status": "pending",
         "admin_notes": "",
@@ -1379,11 +1453,23 @@ Return JSON with match_percentage (0-100) and reasoning."""
     
     await db.claims.insert_one(claim)
     
-    return {
-        "message": "AI-powered claim submitted successfully",
+    # Audit log
+    await db.audit_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "action": "ai_claim_submitted",
+        "item_id": item_id,
         "claim_id": claim["id"],
-        "ai_analysis": ai_analysis,
-        "verification_questions": verification_questions
+        "user_id": current_user["sub"],
+        "ai_confidence": ai_analysis["confidence_band"],
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {
+        "message": "Claim submitted for admin review",
+        "claim_id": claim["id"],
+        "ai_analysis": ai_analysis,  # Shows confidence band, NOT percentage
+        "verification_questions": verification_questions,
+        "note": "Your claim will be reviewed by an admin. AI analysis is advisory only."
     }
 
 @api_router.get("/claims")
