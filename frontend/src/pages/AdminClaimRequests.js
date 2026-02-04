@@ -43,12 +43,22 @@ const AdminClaimRequests = () => {
 
   const handleDecision = async () => {
     if (!selectedClaim || !decisionType) return;
+    
+    // FIX: Reason is mandatory
+    if (!adminNotes.trim()) {
+      toast.error('Reason is mandatory for claim decisions');
+      return;
+    }
+    if (adminNotes.trim().length < 10) {
+      toast.error('Please provide a meaningful reason (minimum 10 characters)');
+      return;
+    }
 
     try {
       const token = localStorage.getItem('token');
       await axios.post(
         `${BACKEND_URL}/api/claims/${selectedClaim.id}/decision`,
-        { status: decisionType, notes: adminNotes },
+        { status: decisionType, reason: adminNotes },  // Changed from notes to reason
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
@@ -58,22 +68,30 @@ const AdminClaimRequests = () => {
       setAdminNotes('');
       fetchClaims();
     } catch (error) {
-      toast.error('Failed to update claim');
+      const message = error.response?.data?.detail || 'Failed to update claim';
+      toast.error(message);
     }
   };
 
-  const getConfidenceColor = (percentage) => {
-    if (percentage >= 80) return 'text-green-600 bg-green-50';
-    if (percentage >= 60) return 'text-yellow-600 bg-yellow-50';
-    if (percentage >= 40) return 'text-orange-600 bg-orange-50';
-    return 'text-red-600 bg-red-50';
+  // FIX #5: Use confidence band instead of percentage
+  const getConfidenceBandColor = (band) => {
+    switch(band) {
+      case 'HIGH': return 'text-green-600 bg-green-50 border-green-200';
+      case 'MEDIUM': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+      case 'LOW': return 'text-orange-600 bg-orange-50 border-orange-200';
+      case 'INSUFFICIENT': return 'text-red-600 bg-red-50 border-red-200';
+      default: return 'text-slate-600 bg-slate-50 border-slate-200';
+    }
   };
 
-  const getConfidenceLabel = (percentage) => {
-    if (percentage >= 80) return 'High Match';
-    if (percentage >= 60) return 'Medium Match';
-    if (percentage >= 40) return 'Low Match';
-    return 'Very Low Match';
+  const getConfidenceLabel = (band) => {
+    switch(band) {
+      case 'HIGH': return 'High Confidence';
+      case 'MEDIUM': return 'Medium Confidence';
+      case 'LOW': return 'Low Confidence';
+      case 'INSUFFICIENT': return 'Insufficient Evidence';
+      default: return 'Unknown';
+    }
   };
 
   const filterClaims = (status) => {
