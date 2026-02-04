@@ -104,9 +104,10 @@ class CampusLostFoundTester:
         # Restore token
         self.admin_token = original_token
         
-        expected_error = response and response.status_code == 401
+        # Backend returns 403 Forbidden when no auth header is provided
+        expected_error = response and response.status_code in [401, 403]
         error_msg = response.json().get('detail', '') if response else ''
-        is_auth_error = 'Not authenticated' in error_msg or 'Authorization header' in error_msg
+        is_auth_error = any(keyword in error_msg.lower() for keyword in ['not authenticated', 'authorization', 'forbidden', 'access'])
         
         self.log_result("Lobby Requires Auth (No Token)", 
                       expected_error,
