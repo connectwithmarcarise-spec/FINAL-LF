@@ -1336,8 +1336,16 @@ async def create_ai_powered_claim(
             detail="Identification marks too vague. Please describe unique features."
         )
     
+    # AUDIT FIX: Check item status - can't claim archived/returned items
+    if item.get("status") in ["claimed", "returned", "archived"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"This item is already {item.get('status')}. It cannot be claimed."
+        )
+    
     # Handle proof image upload (OPTIONAL)
     proof_image_url = None
+    has_proof_image = False
     if proof_image and proof_image.filename:
         if not proof_image.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Only image files allowed for proof")
@@ -1352,14 +1360,22 @@ async def create_ai_powered_claim(
             f.write(content)
         
         proof_image_url = f"/uploads/items/{proof_filename}"
+        has_proof_image = True
     
-    # Prepare data for AI analysis
+    # AUDIT FIX: Assess input quality before AI analysis
+    description_quality = assess_input_quality(description)
+    marks_quality = assess_input_quality(identification_marks)
+    
+    # Prepare STRUCTURED data for AI analysis
     claim_data = {
         "product_type": product_type,
         "description": description,
         "identification_marks": identification_marks,
         "lost_location": lost_location,
-        "approximate_date": approximate_date
+        "approximate_date": approximate_date,
+        "has_proof_image": has_proof_image,
+        "description_quality": description_quality,
+        "marks_quality": marks_quality
     }
     
     item_data = {
@@ -1367,17 +1383,25 @@ async def create_ai_powered_claim(
         "description": item.get("description", ""),
         "location": item.get("location", ""),
         "approximate_time": item.get("approximate_time", ""),
-        "created_date": item.get("created_date", "")
+        "created_date": item.get("created_date", ""),
+        "has_image": bool(item.get("image_url")),
+        "secret_message": item.get("secret_message", "")  # AUDIT FIX: Include for comparison
     }
     
-    # Perform AI advisory analysis - CONFIDENCE BANDS, NOT PERCENTAGES
+    # AUDIT FIX: Build structured AI analysis with proper explainability
     ai_analysis = {
-        "confidence_band": "LOW",
+        "confidence_band": "INSUFFICIENT",
         "reasoning": "AI analysis not available",
-        "advisory_note": "This is advisory only. Admin will make the final decision."
+        "what_matched": [],
+        "what_partially_matched": [],
+        "what_did_not_match": [],
+        "missing_information": [],
+        "inconsistencies": [],
+        "input_quality_flags": description_quality["flags"] + marks_quality["flags"],
+        "advisory_note": "⚠️ This is ADVISORY ONLY. The admin will review and make the final decision."
     }
     verification_questions = []
-    internal_score = 0  # Internal only, not shown to user
+    internal_score = 0
     
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
