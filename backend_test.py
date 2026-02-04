@@ -865,7 +865,7 @@ class CampusLostFoundTester:
         return self.tests_passed == self.tests_run
 
 def main():
-    tester = StudentDatabaseTester()
+    tester = CampusLostFoundTester()
     success = tester.run_all_tests()
     return 0 if success else 1
 
