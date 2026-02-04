@@ -780,14 +780,53 @@ class CampusLostFoundTester:
                           f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
 
     def run_all_tests(self):
-        """Run all backend tests"""
-        print("🚀 Starting Student Database Backend Tests...")
+        """Run all backend tests for redesigned Campus Lost & Found system"""
+        print("🚀 Starting Campus Lost & Found Backend Tests...")
         print(f"🌐 Testing against: {self.base_url}")
         
         # Authentication
         if not self.test_admin_login():
             print("❌ Cannot proceed without admin authentication")
             return False
+        
+        # ===================== REDESIGNED SYSTEM TESTS =====================
+        print("\n" + "="*60)
+        print("🔄 TESTING REDESIGNED CAMPUS LOST & FOUND SYSTEM")
+        print("="*60)
+        
+        # Core System Tests
+        self.test_health_check_no_auth()
+        self.test_lobby_requires_auth()
+        self.test_lobby_with_auth()
+        
+        # Student Authentication for Item Operations
+        if not self.test_student_login():
+            print("❌ Cannot proceed with item tests without student authentication")
+        else:
+            # Create test items
+            self.test_create_lost_item()
+            self.test_create_found_item()
+            
+            # Semantic Tests - Claims vs Found Responses
+            self.test_claim_lost_item_should_fail()
+            self.test_found_response_for_lost_item()
+            self.test_found_response_for_found_item_should_fail()
+            
+            # Claims for FOUND items
+            if self.test_claim_found_item():
+                # Admin accountability tests
+                self.test_claim_decision_no_reason()
+                self.test_claim_decision_short_reason()
+                self.test_claim_decision_proper_reason()
+        
+        # Context-based student management
+        self.test_students_by_context()
+        self.test_student_contexts()
+        
+        # ===================== LEGACY TESTS =====================
+        print("\n" + "="*60)
+        print("📚 RUNNING LEGACY COMPATIBILITY TESTS")
+        print("="*60)
         
         # Student Login Tests
         self.test_student_login_valid_format()
@@ -820,6 +859,8 @@ class CampusLostFoundTester:
             print(f"\n❌ FAILED TESTS:")
             for failure in self.failed_tests:
                 print(f"  - {failure}")
+        else:
+            print(f"\n🎉 ALL TESTS PASSED!")
         
         return self.tests_passed == self.tests_run
 
