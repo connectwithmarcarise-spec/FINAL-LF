@@ -65,8 +65,9 @@ export const claimsAPI = {
     api.post(`/claims/${claimId}/verification-question`, { claim_id: claimId, question }),
   answerVerification: (claimId, answer) => 
     api.post(`/claims/${claimId}/answer`, { claim_id: claimId, answer }),
-  makeDecision: (claimId, status, notes) => 
-    api.post(`/claims/${claimId}/decision`, { status, notes })
+  // ACCOUNTABILITY: reason is now mandatory (was "notes")
+  makeDecision: (claimId, status, reason) => 
+    api.post(`/claims/${claimId}/decision`, { status, reason })
 };
 
 // Messages APIs
