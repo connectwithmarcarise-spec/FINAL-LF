@@ -335,12 +335,20 @@ async def health_check():
     """Health check endpoint for monitoring"""
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
 
-# ===================== PUBLIC LOBBY ENDPOINTS =====================
+# ===================== LOBBY ENDPOINTS (REQUIRES AUTHENTICATION) =====================
+# DESIGN FIX: No public browsing before login - lobby requires authentication
 
 @api_router.get("/lobby/items")
-async def get_lobby_items(item_type: Optional[str] = None):
-    """Public endpoint - shows all active items with safe student info"""
-    query = {"is_deleted": False, "status": "active"}
+async def get_lobby_items(
+    item_type: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)  # REQUIRES AUTH
+):
+    """
+    AUTHENTICATED endpoint - shows all items with safe student info.
+    DESIGN FIX: Lobby requires login - no public browsing.
+    """
+    # Include both "active" and "reported" statuses for backward compatibility
+    query = {"is_deleted": False, "status": {"$in": ["active", "reported", "found_reported"]}}
     
     if item_type and item_type in ["lost", "found"]:
         query["item_type"] = item_type
@@ -361,21 +369,29 @@ async def get_lobby_items(item_type: Optional[str] = None):
                 "department": "Unknown",
                 "year": "N/A"
             }
-        # Remove sensitive fields (including secret_message)
+        # Remove sensitive fields
         item.pop("student_id", None)
-        item.pop("secret_message", None)  # NEW: Never expose secret message publicly
+        item.pop("secret_message", None)
+        
+        # Add action hints based on item type
+        if item["item_type"] == "lost":
+            item["available_action"] = "found_response"
+            item["action_label"] = "I Found This"
+        else:
+            item["available_action"] = "claim"
+            item["action_label"] = "Claim This Item"
     
     return items
 
 @api_router.get("/lobby/items/lost")
-async def get_lobby_lost_items():
-    """Public endpoint - shows lost items only"""
-    return await get_lobby_items(item_type="lost")
+async def get_lobby_lost_items(current_user: dict = Depends(get_current_user)):
+    """Authenticated endpoint - shows lost items only"""
+    return await get_lobby_items(item_type="lost", current_user=current_user)
 
 @api_router.get("/lobby/items/found")
-async def get_lobby_found_items():
-    """Public endpoint - shows found items only"""
-    return await get_lobby_items(item_type="found")
+async def get_lobby_found_items(current_user: dict = Depends(get_current_user)):
+    """Authenticated endpoint - shows found items only"""
+    return await get_lobby_items(item_type="found", current_user=current_user)
 
 # ===================== AUTH ROUTES =====================
 
