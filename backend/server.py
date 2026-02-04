@@ -1002,13 +1002,155 @@ async def remove_like_dislike(item_id: str, current_user: dict = Depends(get_cur
     }
 
 
-# ===================== CLAIMS =====================
+# ===================== "I FOUND THIS" RESPONSES (For LOST items only) =====================
+# This is SEPARATE from Claims - used when someone finds a LOST item
+
+@api_router.post("/items/{item_id}/found-response")
+async def submit_found_response(
+    item_id: str,
+    data: FoundResponse,
+    current_user: dict = Depends(require_student)
+):
+    """
+    Submit 'I Found This Item' response for a LOST item.
+    This is NOT a claim - it's a response to help return a lost item to its owner.
+    Claims are ONLY for FOUND items (ownership verification).
+    """
+    item = await db.items.find_one({"id": item_id, "is_deleted": False})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    # SEMANTIC FIX: Found responses only for LOST items
+    if item["item_type"] != "lost":
+        raise HTTPException(
+            status_code=400, 
+            detail="'I Found This' is only for LOST items. Use 'Claim' for FOUND items."
+        )
+    
+    # Prevent self-response (owner can't "find" their own lost item)
+    if item["student_id"] == current_user["sub"]:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot respond to your own lost item report"
+        )
+    
+    # Check for duplicate responses from same user
+    existing_response = await db.found_responses.find_one({
+        "item_id": item_id,
+        "responder_id": current_user["sub"],
+        "status": {"$in": ["pending", "under_review"]}
+    })
+    if existing_response:
+        raise HTTPException(status_code=400, detail="You already submitted a response for this item")
+    
+    # Rate limiting: Max 3 responses per user per day
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    responses_today = await db.found_responses.count_documents({
+        "responder_id": current_user["sub"],
+        "created_at": {"$gte": today_start.isoformat()}
+    })
+    if responses_today >= 3:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Maximum 3 'Found' responses per day."
+        )
+    
+    now = datetime.now(timezone.utc)
+    found_response = {
+        "id": str(uuid.uuid4()),
+        "item_id": item_id,
+        "responder_id": current_user["sub"],
+        "message": data.message,
+        "found_location": data.found_location,
+        "found_time": data.found_time,
+        "status": "pending",  # pending, verified, rejected
+        "admin_notes": "",
+        "created_at": now.isoformat()
+    }
+    
+    await db.found_responses.insert_one(found_response)
+    
+    # Update item status to "found_reported" (lifecycle transition)
+    await db.items.update_one(
+        {"id": item_id},
+        {
+            "$set": {"status": "found_reported"},
+            "$push": {"status_history": {
+                "status": "found_reported",
+                "changed_at": now.isoformat(),
+                "changed_by": current_user["sub"],
+                "reason": "Someone reported finding this item"
+            }}
+        }
+    )
+    
+    # Audit log
+    await db.audit_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "action": "found_response_submitted",
+        "item_id": item_id,
+        "user_id": current_user["sub"],
+        "timestamp": now.isoformat()
+    })
+    
+    return {
+        "message": "Thank you! Your response has been submitted. The item owner will be notified.",
+        "response_id": found_response["id"]
+    }
+
+@api_router.get("/items/{item_id}/found-responses")
+async def get_found_responses(item_id: str, current_user: dict = Depends(get_current_user)):
+    """Get all 'Found' responses for a LOST item"""
+    item = await db.items.find_one({"id": item_id})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    # Only owner or admin can see responses
+    if current_user["role"] == "student" and item["student_id"] != current_user["sub"]:
+        raise HTTPException(status_code=403, detail="Only the item owner can view responses")
+    
+    responses = await db.found_responses.find(
+        {"item_id": item_id},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    # Enrich with responder info
+    for resp in responses:
+        responder = await db.students.find_one(
+            {"id": resp["responder_id"]},
+            {"_id": 0, "full_name": 1, "department": 1, "year": 1}
+        )
+        resp["responder"] = responder
+    
+    return responses
+
+
+# ===================== CLAIMS (ONLY for FOUND items - ownership verification) =====================
 
 @api_router.post("/claims")
 async def create_claim(data: ClaimRequest, current_user: dict = Depends(require_student)):
+    """
+    Create a claim for a FOUND item.
+    SEMANTIC FIX: Claims are ONLY for FOUND items (ownership verification).
+    For LOST items, use 'I Found This' response instead.
+    """
     item = await db.items.find_one({"id": data.item_id, "is_deleted": False})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    
+    # SEMANTIC FIX: Claims only for FOUND items
+    if item["item_type"] != "found":
+        raise HTTPException(
+            status_code=400, 
+            detail="Claims are only for FOUND items. For LOST items, use 'I Found This' button."
+        )
+    
+    # Prevent owner from claiming their own found item report
+    if item["student_id"] == current_user["sub"]:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot claim an item you reported as found"
+        )
     
     existing_claim = await db.claims.find_one({
         "item_id": data.item_id,
@@ -1018,12 +1160,36 @@ async def create_claim(data: ClaimRequest, current_user: dict = Depends(require_
     if existing_claim:
         raise HTTPException(status_code=400, detail="You already have a pending claim for this item")
     
+    # Rate limiting: Max 5 claims per user per day
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    claims_today = await db.claims.count_documents({
+        "claimant_id": current_user["sub"],
+        "created_at": {"$gte": today_start.isoformat()}
+    })
+    if claims_today >= 5:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Maximum 5 claims per day."
+        )
+    
+    # Check total pending claims on this item (prevent claim flooding)
+    total_pending = await db.claims.count_documents({
+        "item_id": data.item_id,
+        "status": {"$in": ["pending", "under_review"]}
+    })
+    if total_pending >= 10:
+        raise HTTPException(
+            status_code=400,
+            detail="This item has too many pending claims. Please wait for admin review."
+        )
+    
     claim = {
         "id": str(uuid.uuid4()),
         "item_id": data.item_id,
         "claimant_id": current_user["sub"],
+        "claim_type": "ownership",  # Always ownership for FOUND items
         "message": data.message,
-        "status": "pending",  # pending, under_review, approved, rejected
+        "status": "pending",
         "verification_questions": [],
         "verification_answers": [],
         "admin_notes": "",
