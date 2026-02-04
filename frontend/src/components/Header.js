@@ -1,5 +1,15 @@
 import { Link } from 'react-router-dom';
-import { Building2 } from 'lucide-react';
+import { Building2, LogOut, User, ChevronDown } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { Button } from './ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 export const CollegeLogo = ({ className = '' }) => {
   return (
@@ -19,6 +29,34 @@ export const CollegeLogo = ({ className = '' }) => {
   );
 };
 
+/**
+ * Role Badge Component - Shows logged-in role in top-right
+ */
+export const RoleBadge = ({ role, userName }) => {
+  const getRoleDisplay = () => {
+    switch (role) {
+      case 'student': return { label: 'Student', color: 'bg-blue-100 text-blue-700 border-blue-200' };
+      case 'admin': return { label: 'Admin', color: 'bg-amber-100 text-amber-700 border-amber-200' };
+      case 'super_admin': return { label: 'Super Admin', color: 'bg-purple-100 text-purple-700 border-purple-200' };
+      default: return { label: 'Guest', color: 'bg-slate-100 text-slate-700 border-slate-200' };
+    }
+  };
+  
+  const { label, color } = getRoleDisplay();
+  
+  return (
+    <div className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${color} flex items-center gap-2`}>
+      <User className="w-3.5 h-3.5" />
+      <span>{label}</span>
+      {userName && <span className="text-slate-500">• {userName.split(' ')[0]}</span>}
+    </div>
+  );
+};
+
+/**
+ * PublicHeader - For unauthenticated pages (landing, login)
+ * DESIGN FIX: No "Common Lobby" link before login
+ */
 export const PublicHeader = () => {
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-50 glass">
@@ -28,13 +66,7 @@ export const PublicHeader = () => {
             <CollegeLogo />
           </Link>
           <nav className="flex items-center gap-4">
-            <Link 
-              to="/lobby"
-              className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
-              data-testid="common-lobby-link"
-            >
-              Common Lobby
-            </Link>
+            {/* NO Common Lobby link - requires authentication */}
             <Link 
               to="/student/login"
               className="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors btn-press shadow-sm"
@@ -50,6 +82,70 @@ export const PublicHeader = () => {
               Admin
             </Link>
           </nav>
+        </div>
+      </div>
+    </header>
+  );
+};
+
+/**
+ * AuthenticatedHeader - Shows role badge and user info
+ */
+export const AuthenticatedHeader = ({ children }) => {
+  const { user, role, logout } = useAuth();
+  
+  const getUserName = () => {
+    if (role === 'student') return user?.full_name;
+    return user?.full_name || user?.username;
+  };
+  
+  return (
+    <header className="bg-white border-b border-slate-200 sticky top-0 z-50 glass">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16">
+          <Link to={role === 'student' ? '/student' : '/admin'} className="flex items-center">
+            <CollegeLogo />
+          </Link>
+          
+          <div className="flex items-center gap-4">
+            {/* Role Badge - TOP RIGHT */}
+            <RoleBadge role={role} userName={getUserName()} />
+            
+            {/* User Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="flex items-center gap-2 px-3">
+                  <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center overflow-hidden">
+                    {user?.profile_picture ? (
+                      <img 
+                        src={`${process.env.REACT_APP_BACKEND_URL}${user.profile_picture}`} 
+                        alt="" 
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-sm font-medium text-slate-600">
+                        {getUserName()?.charAt(0) || 'U'}
+                      </span>
+                    )}
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-slate-500" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>
+                  <div className="text-sm font-medium">{getUserName()}</div>
+                  <div className="text-xs text-slate-500 capitalize">{role?.replace('_', ' ')}</div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {children}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={logout} className="text-red-600">
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
     </header>
