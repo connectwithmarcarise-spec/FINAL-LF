@@ -891,12 +891,35 @@ async def get_my_items(current_user: dict = Depends(require_student)):
     return items
 
 @api_router.get("/items/public")
-async def get_public_items():
-    """Public endpoint - shows recently found items without sensitive data"""
+async def get_public_items(current_user: dict = Depends(get_current_user)):
+    """
+    Shows all items with ownership flag for proper claim visibility.
+    FIX #3: Ownership check to hide invalid actions.
+    """
     items = await db.items.find(
-        {"item_type": "found", "is_deleted": False, "status": "active"},
-        {"_id": 0, "student_id": 0}
-    ).sort("created_at", -1).to_list(50)
+        {"is_deleted": False, "status": {"$in": ["reported", "active", "found_reported"]}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    user_id = current_user.get("sub")
+    user_role = current_user.get("role", "student")
+    
+    for item in items:
+        # FIX #3: Add ownership flag - owners should NOT see claim button
+        item["is_owner"] = (item.get("student_id") == user_id) if user_role == "student" else False
+        
+        # Get safe student info
+        student = await db.students.find_one(
+            {"id": item.get("student_id")},
+            {"_id": 0, "full_name": 1, "department": 1, "year": 1}
+        )
+        item["student"] = student or {"full_name": "Anonymous", "department": "N/A", "year": "N/A"}
+        
+        # Remove sensitive data
+        if user_role == "student" and not item["is_owner"]:
+            item.pop("student_id", None)
+            item.pop("secret_message", None)
+    
     return items
 
 @api_router.get("/items/{item_id}")
