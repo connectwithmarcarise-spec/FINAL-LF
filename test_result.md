@@ -694,13 +694,84 @@ agent_communication:
       - Message seen timestamps
       - Student logout
 
+backend:
+  - task: "Campus Feed - Post creation (Admin)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented Campus Notice & Appreciation Feed with POST /api/feed/posts endpoint for admin post creation"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Campus Feed admin post creation works perfectly - POST /api/feed/posts accepts formdata with title, description, post_type='announcement' and returns post_id successfully"
+
+  - task: "Campus Feed - Like and comment (Student)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented like/unlike posts and student commenting functionality"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Campus Feed student interactions work correctly - POST /api/feed/posts/{post_id}/like for like/unlike, POST /api/feed/posts/{post_id}/comments for adding comments, DELETE /api/feed/posts/{post_id}/comments/{comment_id} for comment deletion by admin"
+
+  - task: "Campus Feed - Get all posts"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented GET /api/feed/posts endpoint to retrieve all feed posts"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/feed/posts returns proper list structure with required fields (id, title, description, post_type)"
+
+  - task: "AI Matching - Should show non-zero percentages"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "main"
+        comment: "CRITICAL FIX: Query used status='active' but items are stored with 'reported'. Fixed query to use {'status': {'$in': ['reported', 'active', 'found_reported']}}"
+      - working: true
+        agent: "testing"
+        comment: "✅ CRITICAL FIX VERIFIED: AI Matching now returns non-zero percentages correctly - Found 20 matches with confidence scores ranging from 68-73%. Fallback algorithm working when AI unavailable (ai_powered: false). Query fix successful."
+
+  - task: "Items Public API - Ownership Flag"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added is_owner boolean flag to GET /api/items/public endpoint for proper claim visibility"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Items Public API ownership flag working perfectly - Each item has is_owner boolean flag, owners see is_owner=true, non-owners see is_owner=false. Tested with multiple users and confirmed accuracy."
+
 test_plan:
-  current_focus:
-    - "Campus Feed - Post creation (Admin)"
-    - "Campus Feed - Like and comment (Student)"
-    - "AI Matching - Should show non-zero percentages"
-    - "Claim visibility - Owner badge instead of claim button"
-    - "Student logout button"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
