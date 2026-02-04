@@ -2,18 +2,27 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { Search, MapPin, Clock, Package, User2, GraduationCap, Calendar, ArrowLeft } from 'lucide-react';
+import { Search, MapPin, Clock, Package, User2, GraduationCap, Calendar, ArrowLeft, Hand, CheckCircle, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Card, CardContent } from '../components/ui/card';
-import { PublicHeader } from '../components/Header';
+import { StudentHeader, RoleBadge } from '../components/Header';
+import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
+/**
+ * PublicPage (Common Lobby)
+ * DESIGN FIX: Now requires authentication - no public browsing
+ * 
+ * SEMANTIC FIX:
+ * - FOUND items → "Claim This Item" (ownership verification)
+ * - LOST items → "I Found This" (reporting found instance)
+ */
 const PublicPage = () => {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, token, role } = useAuth();
   const [lostItems, setLostItems] = useState([]);
   const [foundItems, setFoundItems] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -21,28 +30,28 @@ const PublicPage = () => {
   const [activeTab, setActiveTab] = useState('all');
   const navigate = useNavigate();
 
-  const getRoleDisplay = () => {
-    if (!user) return null;
-    if (user.role === 'student') return 'Student';
-    if (user.role === 'super_admin') return 'Super Admin';
-    if (user.role === 'admin') return 'Admin';
-    return user.role;
-  };
-
   useEffect(() => {
-    fetchItems();
-  }, []);
+    if (isAuthenticated && token) {
+      fetchItems();
+    }
+  }, [isAuthenticated, token]);
 
   const fetchItems = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${BACKEND_URL}/api/lobby/items`);
+      const response = await axios.get(`${BACKEND_URL}/api/lobby/items`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       const items = response.data;
       
       setLostItems(items.filter(item => item.item_type === 'lost'));
       setFoundItems(items.filter(item => item.item_type === 'found'));
     } catch (error) {
       console.error('Failed to fetch items:', error);
+      if (error.response?.status === 401) {
+        toast.error('Session expired. Please login again.');
+        navigate('/');
+      }
     } finally {
       setLoading(false);
     }
