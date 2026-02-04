@@ -160,8 +160,18 @@ export const ItemCard = ({
             </div>
           )}
           
-          {/* CRITICAL: Claim button for students viewing found items */}
-          {showClaimButton && item.item_type === 'found' && item.status === 'active' && (
+          {/* FIX #3: Owner badge - users should NOT see claim option for their own items */}
+          {isOwner && showClaimButton && (
+            <div className="mt-4 pt-3 border-t border-slate-100">
+              <div className="flex items-center gap-2 text-sm text-purple-600 bg-purple-50 px-3 py-2 rounded-lg">
+                <AlertCircle className="w-4 h-4" />
+                <span className="font-medium">You reported this item</span>
+              </div>
+            </div>
+          )}
+          
+          {/* FIX #3: Claim button - ONLY for non-owners viewing found items */}
+          {showClaimButton && !isOwner && item.item_type === 'found' && (item.status === 'active' || item.status === 'reported') && (
             <div className="mt-4 pt-3 border-t border-slate-100">
               <Button 
                 className="w-full bg-emerald-600 hover:bg-emerald-700"
