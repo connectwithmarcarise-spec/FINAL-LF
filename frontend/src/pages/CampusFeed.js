@@ -340,9 +340,10 @@ const PostCard = memo(({
               <Heart className={`w-5 h-5 transition-transform ${post.is_liked_by_me ? 'fill-current animate-pulse' : ''}`} />
               <span className="font-medium">{post.likes || 0}</span>
             </Button>
+            {/* Always show TOTAL comment count regardless of expanded state */}
             <div className="flex items-center gap-2 text-slate-600">
               <MessageCircle className="w-5 h-5" />
-              <span>{comments.length} comments</span>
+              <span>{totalComments} comment{totalComments !== 1 ? 's' : ''}</span>
             </div>
             {!post.comments_enabled && (
               <div className="flex items-center gap-1 text-xs text-slate-400 ml-auto">
@@ -352,23 +353,20 @@ const PostCard = memo(({
             )}
           </div>
 
-          {/* FIX #2: Comments Section - Visible to ALL users (students & admins) */}
-          {comments.length > 0 && (
+          {/* Comments Section - Visible to ALL users (students & admins) */}
+          {totalComments > 0 && (
             <div className="space-y-3 pt-3 border-t border-slate-100">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                  Comments ({comments.length})
-                </p>
-                {hasMoreComments && (
-                  <button
-                    onClick={() => setShowAllComments(!showAllComments)}
-                    className="text-xs text-purple-600 hover:text-purple-700 font-medium"
-                  >
-                    {showAllComments ? 'Show less' : `View all ${comments.length} comments`}
-                  </button>
-                )}
-              </div>
+              {/* View More Comments Toggle - Show at TOP if there are hidden comments */}
+              {hasMoreComments && !showAllComments && (
+                <button
+                  onClick={() => setShowAllComments(true)}
+                  className="text-sm text-purple-600 hover:text-purple-700 font-medium py-2 w-full text-left hover:bg-purple-50 rounded-lg px-2 transition-colors"
+                >
+                  View {hiddenCount} more comment{hiddenCount !== 1 ? 's' : ''}...
+                </button>
+              )}
               
+              {/* Comments List */}
               <div className="space-y-2">
                 {displayedComments.map((comment) => (
                   <CommentItem
@@ -383,6 +381,16 @@ const PostCard = memo(({
                   />
                 ))}
               </div>
+
+              {/* Hide Comments Toggle - Show at BOTTOM when expanded */}
+              {showAllComments && hasMoreComments && (
+                <button
+                  onClick={() => setShowAllComments(false)}
+                  className="text-sm text-slate-500 hover:text-slate-700 font-medium py-2 w-full text-center hover:bg-slate-50 rounded-lg transition-colors"
+                >
+                  Hide comments
+                </button>
+              )}
             </div>
           )}
 
