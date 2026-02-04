@@ -250,10 +250,20 @@ const PostCard = memo(({
     }
   };
 
-  // FIX #2 & #4: ALL users (including admin) can see comments
-  const comments = post.comments || post.recent_comments || [];
-  const displayedComments = showAllComments ? comments : comments.slice(0, 3);
-  const hasMoreComments = comments.length > 3;
+  // UPDATED: Show only 2 most recent comments by default (sorted latest first)
+  const allComments = useMemo(() => {
+    const comments = post.comments || post.recent_comments || [];
+    // Sort by created_at descending (latest first)
+    return [...comments].sort((a, b) => 
+      new Date(b.created_at) - new Date(a.created_at)
+    );
+  }, [post.comments, post.recent_comments]);
+  
+  // Show only 2 comments by default, all when expanded
+  const displayedComments = showAllComments ? allComments : allComments.slice(0, 2);
+  const totalComments = allComments.length;
+  const hasMoreComments = totalComments > 2;
+  const hiddenCount = totalComments - 2;
 
   return (
     <>
