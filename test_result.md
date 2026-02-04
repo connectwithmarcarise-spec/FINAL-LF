@@ -376,7 +376,39 @@ frontend:
     status_history:
       - working: "NA"
         agent: "main"
-        comment: "Shows LOW/MEDIUM/HIGH instead of percentage"
+        comment: |
+          AI SYSTEM AUDIT - COMPREHENSIVE FIXES APPLIED:
+          
+          BACKEND (server.py):
+          1. Added INSUFFICIENT confidence band for weak evidence
+          2. Added assess_input_quality() function to penalize vague inputs
+          3. Check item status before AI analysis (reject archived/returned)
+          4. Include has_proof_image flag in AI context
+          5. Include secret_message in AI analysis (partial, for comparison hints)
+          6. Comprehensive AI system prompt with:
+             - Explicit rules that AI is ADVISORY ONLY
+             - Definition of each confidence band
+             - Generic terms to penalize
+             - Specific evidence to value
+          7. Structured AI output with:
+             - what_matched
+             - what_partially_matched  
+             - what_did_not_match
+             - missing_information
+             - inconsistencies
+             - recommendation_for_admin
+          8. Safe fallback returns INSUFFICIENT (not LOW) when AI fails
+          
+          FRONTEND (AIClaimChat.js):
+          1. Display all match categories
+          2. Show input quality flags
+          3. Show missing information
+          4. INSUFFICIENT band styling
+          
+          FRONTEND (AdminClaims.js):
+          1. Full AI analysis breakdown for admin
+          2. Color-coded match sections
+          3. Admin recommendation display
 
   - task: "Mandatory reason for claim decisions"
     implemented: true
