@@ -437,6 +437,8 @@ class CampusLostFoundTester:
                           f"Status: {response.status_code if response else 'None'}, Error: {error_msg}")
 
     # ===================== LEGACY TESTS (Keep for compatibility) =====================
+    
+    def test_admin_login(self):
         """Test admin login to get authentication token"""
         print("\n🔐 Testing Admin Login...")
         
