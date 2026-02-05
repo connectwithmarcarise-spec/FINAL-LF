@@ -13,7 +13,7 @@ import { format } from 'date-fns';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 /**
- * Safe string formatter - FIX: Prevent "Objects are not valid as React child" error
+ * Safe string formatter - Converts any value to string safely
  */
 const safeString = (value) => {
   if (value === null || value === undefined) return '';
@@ -30,7 +30,7 @@ const safeString = (value) => {
 };
 
 /**
- * Calculate similarity between two strings
+ * Calculate similarity between answer text and secret message
  */
 const calculateSimilarity = (str1, str2) => {
   if (!str1 || !str2) return 0;
@@ -46,7 +46,6 @@ const calculateSimilarity = (str1, str2) => {
   let matches = 0;
   words1.forEach(word => {
     if (words2.has(word)) matches++;
-    // Partial match
     words2.forEach(w2 => {
       if (w2.includes(word) || word.includes(w2)) matches += 0.5;
     });
@@ -57,49 +56,52 @@ const calculateSimilarity = (str1, str2) => {
 };
 
 /**
- * AIClaimChat - Dynamic AI Verification for FOUND item claims
+ * AIClaimChat - AI Verification Chatbot for FOUND item claims
  * 
- * PHASE 2 UPDATES:
- * - Questions generated dynamically from item + secret message
- * - No hardcoded questions
- * - Support English/Tanglish
- * - Calculate match percentage
+ * FIXED:
+ * - Validation only runs on user-typed input string
+ * - Added yes/no confirmation before submission
+ * - Proper error handling without React object rendering
  */
 const AIClaimChat = () => {
   const navigate = useNavigate();
   const { itemId } = useParams();
   const { token, user } = useAuth();
   const chatEndRef = useRef(null);
+  const inputRef = useRef(null);
   
+  // Item state
   const [item, setItem] = useState(null);
   const [itemLoading, setItemLoading] = useState(true);
   const [itemError, setItemError] = useState(null);
   
+  // Chat state
   const [messages, setMessages] = useState([]);
   const [currentInput, setCurrentInput] = useState('');
+  const [inputError, setInputError] = useState(null); // Separate error state for input validation
   const [questions, setQuestions] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState([]);
+  
+  // Flow state
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [generatingQuestions, setGeneratingQuestions] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
 
-  // Scroll to bottom
+  // Scroll to bottom on new messages
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Generate dynamic questions based on item and secret message
+  // Generate dynamic questions
   const generateDynamicQuestions = async (itemData) => {
-    setGeneratingQuestions(true);
-    
     const itemKeyword = safeString(itemData?.item_keyword) || 'item';
     const description = safeString(itemData?.description) || '';
     const location = safeString(itemData?.location) || '';
     const secretMessage = safeString(itemData?.secret_message) || '';
     
     try {
-      // Try to generate AI-powered questions
       const authToken = token || localStorage.getItem('token');
       const response = await axios.post(
         `${BACKEND_URL}/api/claims/generate-questions`,
@@ -116,70 +118,22 @@ const AIClaimChat = () => {
         return response.data.questions;
       }
     } catch (error) {
-      console.log('AI question generation unavailable, using smart fallback');
+      console.log('Using fallback questions');
     }
     
-    // Smart fallback: Generate questions based on available info
-    const generatedQuestions = [];
-    
-    // Question 1: Based on item description
-    if (description.length > 10) {
-      const descWords = description.split(' ').slice(0, 5).join(' ');
-      generatedQuestions.push(
-        `This ${itemKeyword} was described as "${descWords}...". Can you describe specific features like color, brand, or any marks?`
-      );
-    } else {
-      generatedQuestions.push(
-        `Can you describe this ${itemKeyword} in detail? What color is it? Any brand or model?`
-      );
-    }
-    
-    // Question 2: Based on secret message hints
-    if (secretMessage.length >= 20) {
-      // Extract hints from secret message
-      const hints = secretMessage.toLowerCase();
-      if (hints.includes('scratch') || hints.includes('mark') || hints.includes('damage')) {
-        generatedQuestions.push(
-          `You mentioned it's yours - are there any specific marks, scratches, or damage on this item that only you would know about?`
-        );
-      } else if (hints.includes('sticker') || hints.includes('cover') || hints.includes('case')) {
-        generatedQuestions.push(
-          `Does this item have any stickers, case, cover, or accessories that you can describe?`
-        );
-      } else if (hints.includes('name') || hints.includes('written') || hints.includes('label')) {
-        generatedQuestions.push(
-          `Is there any name, label, or writing on this item? What does it say?`
-        );
-      } else {
-        generatedQuestions.push(
-          `What unique identifying feature does this ${itemKeyword} have that only the owner would know?`
-        );
-      }
-    } else {
-      generatedQuestions.push(
-        `What makes this ${itemKeyword} uniquely yours? Describe any personal marks or customizations.`
-      );
-    }
-    
-    // Question 3: Based on location/time
-    if (location) {
-      generatedQuestions.push(
-        `This was found at ${location}. When and where exactly did you lose this ${itemKeyword}? Be specific about date and location.`
-      );
-    } else {
-      generatedQuestions.push(
-        `When did you realize you lost this ${itemKeyword}? Where were you when you last had it?`
-      );
-    }
-    
-    return generatedQuestions;
+    // Fallback questions
+    return [
+      `Describe this ${itemKeyword} in detail - color, brand, model, any unique marks?`,
+      `What unique feature or personal mark on this ${itemKeyword} proves it's yours?`,
+      `When and where did you lose this ${itemKeyword}? Be specific about the location.`
+    ];
   };
 
-  // Load and validate item
+  // Load item on mount
   useEffect(() => {
     const loadItem = async () => {
       if (!itemId) {
-        setItemError('No item ID provided. Please select an item to claim.');
+        setItemError('No item ID provided.');
         setItemLoading(false);
         return;
       }
@@ -193,13 +147,13 @@ const AIClaimChat = () => {
         const foundItem = response.data.find(i => i.id === itemId);
         
         if (!foundItem) {
-          setItemError('Item not found. It may have been deleted or claimed.');
+          setItemError('Item not found.');
           setItemLoading(false);
           return;
         }
 
         if (foundItem.item_type !== 'found') {
-          setItemError('This is a LOST item. You cannot claim it. Use "I Found This Item" instead.');
+          setItemError('This is a LOST item. Use "I Found This Item" instead.');
           setItemLoading(false);
           return;
         }
@@ -218,23 +172,21 @@ const AIClaimChat = () => {
 
         setItem(foundItem);
         
-        // Generate dynamic questions
+        // Generate questions
         const dynamicQuestions = await generateDynamicQuestions(foundItem);
         setQuestions(dynamicQuestions);
         
-        // Start chat with first question
+        // Start chat
         setMessages([
           { 
             type: 'bot', 
-            content: `Hi! I'll help verify your claim for this ${safeString(foundItem?.item_keyword || 'item')}. I have 3 verification questions for you.\n\n**Question 1 of 3:**\n${dynamicQuestions[0]}`
+            content: `Hi! I'll help verify your claim for this ${safeString(foundItem?.item_keyword || 'item')}. Please answer 3 verification questions.\n\n**Question 1 of 3:**\n${dynamicQuestions[0]}`
           }
         ]);
         
-        setGeneratingQuestions(false);
-        
       } catch (error) {
         console.error('Failed to load item:', error);
-        setItemError('Failed to load item details. Please try again.');
+        setItemError('Failed to load item. Please try again.');
       } finally {
         setItemLoading(false);
       }
@@ -245,33 +197,88 @@ const AIClaimChat = () => {
     }
   }, [itemId, token, user]);
 
+  /**
+   * FIXED: Validate ONLY the user-typed input string
+   * Returns true if valid, false if invalid
+   */
+  const validateUserInput = (inputText) => {
+    // Clear previous error FIRST
+    setInputError(null);
+    
+    // Ensure we're validating a string
+    if (typeof inputText !== 'string') {
+      setInputError('Please type a valid response');
+      return false;
+    }
+    
+    // Get trimmed length of actual user input
+    const trimmedInput = inputText.trim();
+    const inputLength = trimmedInput.length;
+    
+    if (inputLength === 0) {
+      setInputError('Please type an answer');
+      return false;
+    }
+    
+    // For yes/no confirmation, any response is valid
+    if (awaitingConfirmation) {
+      return true;
+    }
+    
+    // For questions, minimum 15 characters
+    if (inputLength < 15) {
+      setInputError(`Please provide more detail (${inputLength}/15 characters minimum)`);
+      return false;
+    }
+    
+    return true;
+  };
+
+  /**
+   * Handle sending a message
+   */
   const handleSendMessage = () => {
-    // FIX: Validate only user-typed string input
-    const userInput = currentInput.trim();
+    // Get the actual input value from state
+    const userInputText = currentInput;
     
-    if (!userInput || userInput.length === 0) {
-      toast.error('Please type an answer');
+    // FIXED: Validate ONLY the user input string
+    if (!validateUserInput(userInputText)) {
       return;
     }
     
-    if (userInput.length < 5) {
-      toast.error('Please provide a more detailed answer (at least 5 characters)');
+    const trimmedInput = userInputText.trim();
+    
+    // Clear input immediately
+    setCurrentInput('');
+    setInputError(null);
+    
+    // Handle confirmation response
+    if (awaitingConfirmation) {
+      handleConfirmationResponse(trimmedInput);
       return;
     }
+    
+    // Handle question answer
+    handleQuestionAnswer(trimmedInput);
+  };
 
-    if (!item || questions.length === 0) return;
-
+  /**
+   * Handle answer to verification question
+   */
+  const handleQuestionAnswer = (answer) => {
     // Add user message
-    setMessages(prev => [...prev, { type: 'user', content: userInput }]);
+    setMessages(prev => [...prev, { type: 'user', content: answer }]);
     
     // Store answer
-    const newAnswers = [...answers, { question: questions[currentQuestion], answer: userInput }];
+    const newAnswers = [...answers, { 
+      question: questions[currentQuestion], 
+      answer: answer 
+    }];
     setAnswers(newAnswers);
     
-    setCurrentInput('');
-
-    // Move to next question or submit
+    // Check if more questions
     if (currentQuestion < questions.length - 1) {
+      // Next question
       setTimeout(() => {
         const nextQ = currentQuestion + 1;
         setMessages(prev => [...prev, { 
@@ -281,38 +288,79 @@ const AIClaimChat = () => {
         setCurrentQuestion(nextQ);
       }, 500);
     } else {
-      // All questions answered - submit claim
-      handleSubmitClaim(newAnswers);
+      // All questions answered - ask for confirmation
+      setTimeout(() => {
+        setMessages(prev => [...prev, { 
+          type: 'bot', 
+          content: `Thank you for your answers!\n\n**Do you want to submit this claim to the admin?**\n\nType **yes** to submit or **no** to cancel.`
+        }]);
+        setAwaitingConfirmation(true);
+      }, 500);
     }
   };
 
-  const handleSubmitClaim = async (finalAnswers) => {
+  /**
+   * Handle yes/no confirmation response
+   */
+  const handleConfirmationResponse = (response) => {
+    const normalizedResponse = response.toLowerCase().trim();
+    
+    // Add user message
+    setMessages(prev => [...prev, { type: 'user', content: response }]);
+    
+    if (normalizedResponse === 'yes' || normalizedResponse === 'y') {
+      // Submit claim
+      handleSubmitClaim();
+    } else if (normalizedResponse === 'no' || normalizedResponse === 'n') {
+      // Cancel
+      setCancelled(true);
+      setMessages(prev => [...prev, { 
+        type: 'bot', 
+        content: `Claim submission cancelled.\n\nYou can close this page or go back to browse other items.`,
+        isCancelled: true
+      }]);
+    } else {
+      // Invalid response
+      setMessages(prev => [...prev, { 
+        type: 'bot', 
+        content: `Please type **yes** to submit your claim or **no** to cancel.`
+      }]);
+    }
+  };
+
+  /**
+   * Submit claim to admin
+   */
+  const handleSubmitClaim = async () => {
     setSubmitting(true);
     
     setMessages(prev => [...prev, { 
       type: 'bot', 
-      content: '⏳ Analyzing your answers and calculating match... Please wait.' 
+      content: '⏳ Submitting your claim... Please wait.' 
     }]);
 
     try {
-      // Calculate similarity with secret message
-      const allAnswersText = finalAnswers.map(a => a.answer).join(' ');
+      // Calculate match percentage
+      const allAnswersText = answers.map(a => a.answer).join(' ');
       const secretMessage = safeString(item?.secret_message) || '';
-      const matchPercentage = calculateSimilarity(allAnswersText, secretMessage + ' ' + safeString(item?.description));
+      const matchPercentage = calculateSimilarity(
+        allAnswersText, 
+        secretMessage + ' ' + safeString(item?.description)
+      );
       
       const authToken = token || localStorage.getItem('token');
       
       const formData = new FormData();
       formData.append('item_id', itemId);
       formData.append('product_type', safeString(item?.item_keyword) || 'Unknown');
-      formData.append('description', finalAnswers[0]?.answer || '');
-      formData.append('identification_marks', finalAnswers[1]?.answer || '');
-      formData.append('lost_location', finalAnswers[2]?.answer || '');
+      formData.append('description', answers[0]?.answer || '');
+      formData.append('identification_marks', answers[1]?.answer || '');
+      formData.append('lost_location', answers[2]?.answer || '');
       formData.append('approximate_date', 'Recently');
       formData.append('match_percentage', matchPercentage.toString());
-      formData.append('qa_data', JSON.stringify(finalAnswers));
+      formData.append('qa_data', JSON.stringify(answers));
 
-      const response = await axios.post(`${BACKEND_URL}/api/claims/ai-powered`, formData, {
+      await axios.post(`${BACKEND_URL}/api/claims/ai-powered`, formData, {
         headers: {
           Authorization: `Bearer ${authToken}`,
           'Content-Type': 'multipart/form-data'
@@ -321,36 +369,41 @@ const AIClaimChat = () => {
 
       setSubmitted(true);
       
-      const confidenceBand = response.data.ai_analysis?.confidence_band || 
-        (matchPercentage >= 70 ? 'HIGH' : matchPercentage >= 40 ? 'MEDIUM' : 'LOW');
-      
       setMessages(prev => [...prev, { 
         type: 'bot', 
-        content: `✅ **Claim Submitted Successfully!**\n\nYour claim has been sent to Admin for review.\n\n**Match Score:** ${matchPercentage}% (${confidenceBand} confidence)\n\nYou will be notified once a decision is made.`,
+        content: `✅ **Your request has been submitted to the admin.**\n\nThey will review your claim and contact you soon.\n\n**Match Score:** ${matchPercentage}%`,
         isSuccess: true
       }]);
 
-      toast.success('Claim submitted for admin review!');
+      toast.success('Claim submitted successfully!');
       
     } catch (error) {
       console.error('Claim submission error:', error);
-      const errorData = error.response?.data;
-      let errorMsg = 'Failed to submit claim';
       
-      if (errorData) {
+      // FIXED: Convert error to string safely
+      let errorMsg = 'Failed to submit claim. Please try again.';
+      if (error.response?.data) {
+        const errorData = error.response.data;
         if (typeof errorData === 'string') {
           errorMsg = errorData;
-        } else if (errorData.detail) {
-          errorMsg = typeof errorData.detail === 'string' ? errorData.detail : 'Submission failed';
+        } else if (typeof errorData.detail === 'string') {
+          errorMsg = errorData.detail;
         } else if (errorData.msg) {
-          errorMsg = errorData.msg;
+          errorMsg = String(errorData.msg);
         }
       }
       
       setMessages(prev => [...prev, { 
         type: 'bot', 
-        content: `❌ **Error:** ${errorMsg}\n\nPlease try again.`,
+        content: `❌ **Error:** ${errorMsg}`,
         isError: true
+      }]);
+      
+      // Allow retry
+      setAwaitingConfirmation(true);
+      setMessages(prev => [...prev, { 
+        type: 'bot', 
+        content: `Would you like to try again? Type **yes** to retry or **no** to cancel.`
       }]);
       
       toast.error(errorMsg);
@@ -359,6 +412,9 @@ const AIClaimChat = () => {
     }
   };
 
+  /**
+   * Handle Enter key press
+   */
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -366,16 +422,25 @@ const AIClaimChat = () => {
     }
   };
 
+  /**
+   * Handle input change - clear error on type
+   */
+  const handleInputChange = (e) => {
+    setCurrentInput(e.target.value);
+    // Clear error when user starts typing
+    if (inputError) {
+      setInputError(null);
+    }
+  };
+
   // Loading state
-  if (itemLoading || generatingQuestions) {
+  if (itemLoading) {
     return (
       <div className="max-w-2xl mx-auto py-12 px-4">
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mb-4" />
-            <p className="text-slate-600">
-              {generatingQuestions ? 'Generating verification questions...' : 'Loading item details...'}
-            </p>
+            <p className="text-slate-600">Loading...</p>
           </CardContent>
         </Card>
       </div>
@@ -405,6 +470,8 @@ const AIClaimChat = () => {
     );
   }
 
+  const isFlowComplete = submitted || cancelled;
+
   return (
     <div className="max-w-2xl mx-auto py-4 sm:py-6 px-4">
       {/* Header */}
@@ -418,12 +485,12 @@ const AIClaimChat = () => {
           </div>
           <div>
             <h1 className="font-semibold text-slate-900 text-sm sm:text-base">AI Claim Verification</h1>
-            <p className="text-xs text-slate-500">Answer 3 questions to submit your claim</p>
+            <p className="text-xs text-slate-500">Answer questions to verify ownership</p>
           </div>
         </div>
       </div>
 
-      {/* Item Preview Card */}
+      {/* Item Preview */}
       {item && (
         <Card className="mb-4 border-purple-200 bg-purple-50/50">
           <CardContent className="p-3 sm:p-4">
@@ -472,7 +539,9 @@ const AIClaimChat = () => {
                       ? 'bg-red-50 border border-red-200 text-red-800'
                       : msg.isSuccess
                         ? 'bg-green-50 border border-green-200 text-green-800'
-                        : 'bg-slate-100 text-slate-800'
+                        : msg.isCancelled
+                          ? 'bg-slate-100 border border-slate-200 text-slate-700'
+                          : 'bg-slate-100 text-slate-800'
                 }`}>
                   {msg.type === 'bot' && (
                     <div className="flex items-center gap-2 mb-2">
@@ -488,20 +557,29 @@ const AIClaimChat = () => {
           </div>
 
           {/* Input Area */}
-          {!submitted && (
+          {!isFlowComplete && (
             <div className="border-t p-3 sm:p-4">
+              {/* Input Error Message */}
+              {inputError && (
+                <p className="text-xs text-red-600 mb-2 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  {inputError}
+                </p>
+              )}
+              
               <div className="flex gap-2">
                 <Input
+                  ref={inputRef}
                   value={currentInput}
-                  onChange={(e) => setCurrentInput(e.target.value)}
+                  onChange={handleInputChange}
                   onKeyPress={handleKeyPress}
-                  placeholder="Type your answer..."
+                  placeholder={awaitingConfirmation ? "Type yes or no..." : "Type your answer..."}
                   disabled={submitting}
-                  className="flex-1 text-sm"
+                  className={`flex-1 text-sm ${inputError ? 'border-red-300 focus:border-red-500' : ''}`}
                 />
                 <Button 
                   onClick={handleSendMessage}
-                  disabled={!currentInput.trim() || submitting}
+                  disabled={submitting}
                   className="bg-purple-600 hover:bg-purple-700"
                   size="sm"
                 >
@@ -512,20 +590,23 @@ const AIClaimChat = () => {
                   )}
                 </Button>
               </div>
-              <p className="text-xs text-slate-400 mt-2">
-                Question {currentQuestion + 1} of {questions.length || 3}
-              </p>
+              
+              {!awaitingConfirmation && (
+                <p className="text-xs text-slate-400 mt-2">
+                  Question {Math.min(currentQuestion + 1, questions.length)} of {questions.length}
+                </p>
+              )}
             </div>
           )}
 
-          {/* Done - Go back button */}
-          {submitted && (
+          {/* Flow Complete Actions */}
+          {isFlowComplete && (
             <div className="border-t p-3 sm:p-4">
               <Button 
-                onClick={() => navigate('/student/my-items')}
-                className="w-full bg-emerald-600 hover:bg-emerald-700"
+                onClick={() => navigate(submitted ? '/student/my-items' : '/student/found-items')}
+                className={`w-full ${submitted ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-600 hover:bg-slate-700'}`}
               >
-                View My Claims
+                {submitted ? 'View My Claims' : 'Back to Found Items'}
               </Button>
             </div>
           )}
