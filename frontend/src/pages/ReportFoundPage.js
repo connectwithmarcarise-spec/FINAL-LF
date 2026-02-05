@@ -8,7 +8,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { toast } from 'sonner';
-import { Package, Upload, MapPin, Clock, ArrowLeft, Tag } from 'lucide-react';
+import { Package, Upload, MapPin, Clock, ArrowLeft, Tag, ImageOff, X } from 'lucide-react';
 
 const ITEM_KEYWORDS = [
   'Phone',
@@ -37,10 +37,11 @@ const ReportFoundPage = () => {
     description: '',
     location: '',
     approximate_time: '',
-    secret_message: ''  // NEW: Secret identification message
+    secret_message: ''
   });
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [noImage, setNoImage] = useState(false);  // NEW: "I don't have an image" checkbox
   const [loading, setLoading] = useState(false);
 
   const handleImageChange = (e) => {
@@ -52,6 +53,21 @@ const ReportFoundPage = () => {
       }
       setImage(file);
       setImagePreview(URL.createObjectURL(file));
+      setNoImage(false);  // Uncheck "no image" when user uploads
+    }
+  };
+
+  const clearImage = () => {
+    setImage(null);
+    setImagePreview(null);
+  };
+
+  const handleNoImageChange = (checked) => {
+    setNoImage(checked);
+    if (checked) {
+      // Clear any existing image when checkbox is checked
+      setImage(null);
+      setImagePreview(null);
     }
   };
 
@@ -62,13 +78,12 @@ const ReportFoundPage = () => {
       ? formData.custom_keyword 
       : formData.item_keyword;
 
-    // DESIGN FIX: Image is now OPTIONAL
+    // Image is OPTIONAL - validation doesn't require image
     if (!finalKeyword || !formData.description || !formData.location || !formData.approximate_time || !formData.secret_message) {
       toast.error('Please fill all required fields including Secret Identification Message');
       return;
     }
 
-    // Validate description quality - penalize vague inputs
     if (formData.description.trim().length < 20) {
       toast.error('Please provide a more detailed description (minimum 20 characters)');
       return;
@@ -93,8 +108,8 @@ const ReportFoundPage = () => {
       data.append('location', formData.location);
       data.append('approximate_time', formData.approximate_time);
       data.append('secret_message', formData.secret_message);
-      // DESIGN FIX: Only append image if provided
-      if (image) {
+      // Only append image if provided and not "no image" checked
+      if (image && !noImage) {
         data.append('image', image);
       }
 
