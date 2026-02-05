@@ -94,8 +94,10 @@ const ReportFoundPage = () => {
       return;
     }
 
-    if (!formData.secret_message.trim()) {
-      toast.error('Secret Identification Message is mandatory');
+    // PHASE 2: Secret message must be at least 20 characters
+    const secretMessageTrimmed = formData.secret_message.trim();
+    if (secretMessageTrimmed.length < 20) {
+      toast.error('Secret Proof Message must be at least 20 characters for proper verification');
       return;
     }
 
@@ -107,7 +109,7 @@ const ReportFoundPage = () => {
       data.append('description', formData.description);
       data.append('location', formData.location);
       data.append('approximate_time', formData.approximate_time);
-      data.append('secret_message', formData.secret_message);
+      data.append('secret_message', secretMessageTrimmed);
       // Only append image if provided and not "no image" checked
       if (image && !noImage) {
         data.append('image', image);
@@ -118,7 +120,7 @@ const ReportFoundPage = () => {
       navigate('/student/my-items');
     } catch (error) {
       const message = error.response?.data?.detail || 'Failed to report item';
-      toast.error(message);
+      toast.error(typeof message === 'string' ? message : 'Failed to report item');
     } finally {
       setLoading(false);
     }
