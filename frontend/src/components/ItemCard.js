@@ -1,6 +1,10 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { MapPin, Calendar, Clock, Eye, Trash2, Hand, AlertCircle, Package, ImageOff } from 'lucide-react';
+import { 
+  MapPin, Calendar, Clock, Eye, Trash2, Hand, AlertCircle, Package, ImageOff,
+  Search, User, GraduationCap, Upload, X, Send
+} from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import {
@@ -9,18 +13,51 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from './ui/dialog';
-import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
 import { claimsAPI } from '../services/api';
+import axios from 'axios';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 /**
+ * Safe string formatter - FIX #7: Prevent "Objects are not valid as React child" error
+ */
+const safeString = (value) => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (value instanceof Date) return format(value, 'MMM d, yyyy');
+  if (typeof value === 'object') {
+    // Handle date objects from backend
+    if (value.$date) return format(new Date(value.$date), 'MMM d, yyyy');
+    // Handle other objects - extract meaningful string
+    return JSON.stringify(value);
+  }
+  return String(value);
+};
+
+/**
+ * Format date/time safely - FIX #7
+ */
+const formatDateTime = (dateStr, timeStr) => {
+  try {
+    if (dateStr && typeof dateStr === 'object') {
+      dateStr = dateStr.$date || dateStr.toString();
+    }
+    const date = dateStr ? format(new Date(dateStr), 'MMM d, yyyy') : 'N/A';
+    const time = safeString(timeStr) || 'N/A';
+    return { date, time };
+  } catch {
+    return { date: safeString(dateStr) || 'N/A', time: safeString(timeStr) || 'N/A' };
+  }
+};
+
+/**
  * No Image Placeholder Component
- * Shows "NO IMAGE ATTACHED" when item has no image
  */
 const NoImagePlaceholder = ({ className = '' }) => (
   <div className={`bg-slate-100 flex flex-col items-center justify-center ${className}`}>
@@ -29,6 +66,14 @@ const NoImagePlaceholder = ({ className = '' }) => (
   </div>
 );
 
+/**
+ * ItemCard Component
+ * 
+ * UPDATED BEHAVIOR:
+ * - LOST items: Show "I Found This Item" button (NOT Claim)
+ * - FOUND items: Show "Claim This Item" with AI chatbot flow
+ * - Owner items: Show "You reported this item" badge
+ */
 export const ItemCard = ({ 
   item, 
   showActions = false,
@@ -36,18 +81,32 @@ export const ItemCard = ({
   onDelete, 
   onView,
   onUpdate,
-  showStudent = false,
-  currentUserId = null  // FIX #3: Pass current user ID to check ownership
+  showStudent = true,  // Default to true - always show student info
+  currentUserId = null
 }) => {
+  const navigate = useNavigate();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [showClaimDialog, setShowClaimDialog] = useState(false);
+  const [showFoundDialog, setShowFoundDialog] = useState(false);  // NEW: "I Found This" dialog
   const [deleteReason, setDeleteReason] = useState('');
-  const [claimDetails, setClaimDetails] = useState('');
+  const [foundMessage, setFoundMessage] = useState('');
+  const [foundImage, setFoundImage] = useState(null);
+  const [foundImagePreview, setFoundImagePreview] = useState(null);
   const [deleting, setDeleting] = useState(false);
-  const [claiming, setClaiming] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  // FIX #3: Determine if current user is the owner
+  // Determine if current user is the owner
   const isOwner = item.is_owner === true || (currentUserId && item.student_id === currentUserId);
+  
+  // Safe date/time formatting - FIX #7
+  const { date: displayDate, time: displayTime } = formatDateTime(
+    item.created_date || item.date,
+    item.approximate_time || item.time
+  );
+
+  // Get student info safely - FIX #7
+  const studentName = safeString(item.student?.full_name) || 'Anonymous';
+  const studentDept = safeString(item.student?.department) || '';
+  const studentYear = safeString(item.student?.year) || '';
 
   const handleDelete = async () => {
     if (!deleteReason.trim()) return;
@@ -62,54 +121,95 @@ export const ItemCard = ({
     }
   };
 
-  const handleClaim = async () => {
-    if (!claimDetails.trim()) {
-      toast.error('Please provide claim details');
+  // Handle "I Found This Item" for LOST items
+  const handleFoundImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('Image size should be less than 5MB');
+        return;
+      }
+      setFoundImage(file);
+      setFoundImagePreview(URL.createObjectURL(file));
+    }
+  };
+
+  const clearFoundImage = () => {
+    setFoundImage(null);
+    setFoundImagePreview(null);
+  };
+
+  const handleFoundSubmit = async () => {
+    if (!foundMessage.trim()) {
+      toast.error('Please provide details about where/how you found the item');
       return;
     }
-    
-    setClaiming(true);
+
+    setSubmitting(true);
     try {
-      await claimsAPI.createClaim({
-        item_id: item.id,
-        details: claimDetails
-      });
-      toast.success('Claim submitted successfully!');
-      setShowClaimDialog(false);
-      setClaimDetails('');
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      formData.append('message', foundMessage);
+      if (foundImage) {
+        formData.append('image', foundImage);
+      }
+
+      await axios.post(
+        `${BACKEND_URL}/api/items/${item.id}/found-response`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      );
+
+      toast.success('Response submitted! The owner has been notified.');
+      setShowFoundDialog(false);
+      setFoundMessage('');
+      setFoundImage(null);
+      setFoundImagePreview(null);
       if (onUpdate) await onUpdate();
     } catch (error) {
-      console.error('Claim failed:', error);
-      toast.error(error.response?.data?.detail || 'Failed to submit claim');
+      console.error('Found response failed:', error);
+      const message = error.response?.data?.detail || 'Failed to submit response';
+      toast.error(safeString(message));
     } finally {
-      setClaiming(false);
+      setSubmitting(false);
     }
+  };
+
+  // Handle Claim for FOUND items - Navigate to AI Chat
+  const handleClaimClick = () => {
+    navigate(`/student/claim/${item.id}`);
   };
 
   const statusColors = {
     active: item.item_type === 'lost' ? 'status-lost' : 'status-found',
+    reported: item.item_type === 'lost' ? 'status-lost' : 'status-found',
     claimed: 'status-claimed',
     resolved: 'bg-slate-100 text-slate-600'
   };
 
+  const isActive = item.status === 'active' || item.status === 'reported';
+
   return (
     <>
       <div className="item-card animate-fade-in" data-testid={`item-card-${item.id}`}>
+        {/* Image Section */}
         <div className="relative">
-          {/* Image or No Image Placeholder */}
           {item.image_url ? (
             <img
               src={`${BACKEND_URL}${item.image_url}`}
-              alt={item.description}
+              alt={safeString(item.description)}
               className="item-card-image"
               onError={(e) => {
-                // Replace with placeholder on error
                 e.target.style.display = 'none';
-                e.target.nextSibling.style.display = 'flex';
+                if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
               }}
             />
           ) : null}
-          {/* No Image Placeholder - shown when no image_url or on error */}
           <NoImagePlaceholder 
             className={`item-card-image ${item.image_url ? 'hidden' : 'flex'}`}
           />
@@ -125,35 +225,59 @@ export const ItemCard = ({
           )}
         </div>
         
+        {/* Content Section */}
         <div className="p-4">
-          <p className="text-sm text-slate-800 font-medium line-clamp-2 mb-3">
-            {item.description}
-          </p>
-          
-          <div className="space-y-1.5 text-xs text-slate-500">
-            <div className="flex items-center gap-2">
-              <MapPin className="w-3.5 h-3.5" />
-              <span className="truncate">{item.location}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="w-3.5 h-3.5" />
-              <span>{item.date}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock className="w-3.5 h-3.5" />
-              <span>{item.time}</span>
-            </div>
-          </div>
-
-          {showStudent && item.student && (
-            <div className="mt-3 pt-3 border-t border-slate-100">
-              <p className="text-xs text-slate-500">
-                Reported by: <span className="font-medium text-slate-700">{item.student.full_name}</span>
-              </p>
-              <p className="text-xs text-slate-400 mono">{item.student.roll_number}</p>
+          {/* Item Keyword/Type */}
+          {item.item_keyword && (
+            <div className="mb-2">
+              <Badge variant="outline" className="text-xs">
+                {safeString(item.item_keyword)}
+              </Badge>
             </div>
           )}
 
+          {/* Description */}
+          <p className="text-sm text-slate-800 font-medium line-clamp-2 mb-3">
+            {safeString(item.description)}
+          </p>
+          
+          {/* Location & Time - FIX #7: Safe string rendering */}
+          <div className="space-y-1.5 text-xs text-slate-500">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="truncate">{safeString(item.location)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>{displayDate}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>{displayTime}</span>
+            </div>
+          </div>
+
+          {/* Student Info - Always show */}
+          {showStudent && (
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <div className="flex items-start gap-2">
+                <User className="w-3.5 h-3.5 text-slate-400 mt-0.5 flex-shrink-0" />
+                <div className="text-xs">
+                  <p className="text-slate-600">
+                    Reported by: <span className="font-medium text-slate-800">{studentName}</span>
+                  </p>
+                  {(studentDept || studentYear) && (
+                    <p className="text-slate-400 flex items-center gap-1 mt-0.5">
+                      <GraduationCap className="w-3 h-3" />
+                      {studentDept} {studentYear && `• ${studentYear}`}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons based on item type */}
           {showActions && (
             <div className="mt-4 pt-3 border-t border-slate-100 flex gap-2">
               <Button 
@@ -166,7 +290,7 @@ export const ItemCard = ({
                 <Eye className="w-4 h-4 mr-1" />
                 View
               </Button>
-              {item.status === 'active' && (
+              {isActive && (
                 <Button 
                   variant="outline" 
                   size="sm"
@@ -180,7 +304,7 @@ export const ItemCard = ({
             </div>
           )}
           
-          {/* FIX #3: Owner badge - users should NOT see claim option for their own items */}
+          {/* Owner badge - shown when user reported this item */}
           {isOwner && showClaimButton && (
             <div className="mt-4 pt-3 border-t border-slate-100">
               <div className="flex items-center gap-2 text-sm text-purple-600 bg-purple-50 px-3 py-2 rounded-lg">
@@ -190,13 +314,28 @@ export const ItemCard = ({
             </div>
           )}
           
-          {/* FIX #3: Claim button - ONLY for non-owners viewing found items */}
-          {showClaimButton && !isOwner && item.item_type === 'found' && (item.status === 'active' || item.status === 'reported') && (
+          {/* LOST items: "I Found This Item" button - for non-owners only */}
+          {showClaimButton && !isOwner && item.item_type === 'lost' && isActive && (
+            <div className="mt-4 pt-3 border-t border-slate-100">
+              <Button 
+                className="w-full bg-orange-600 hover:bg-orange-700"
+                size="sm"
+                onClick={() => setShowFoundDialog(true)}
+                data-testid={`found-item-${item.id}`}
+              >
+                <Search className="w-4 h-4 mr-2" />
+                I Found This Item
+              </Button>
+            </div>
+          )}
+
+          {/* FOUND items: "Claim This Item" button - for non-owners only */}
+          {showClaimButton && !isOwner && item.item_type === 'found' && isActive && (
             <div className="mt-4 pt-3 border-t border-slate-100">
               <Button 
                 className="w-full bg-emerald-600 hover:bg-emerald-700"
                 size="sm"
-                onClick={() => setShowClaimDialog(true)}
+                onClick={handleClaimClick}
                 data-testid={`claim-item-${item.id}`}
               >
                 <Hand className="w-4 h-4 mr-2" />
@@ -228,7 +367,7 @@ export const ItemCard = ({
               />
             </div>
           </div>
-          <div className="flex justify-end gap-2">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
               Cancel
             </Button>
@@ -240,54 +379,101 @@ export const ItemCard = ({
             >
               {deleting ? 'Deleting...' : 'Delete'}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Claim Dialog */}
-      <Dialog open={showClaimDialog} onOpenChange={setShowClaimDialog}>
-        <DialogContent>
+      {/* "I Found This Item" Dialog for LOST items */}
+      <Dialog open={showFoundDialog} onOpenChange={setShowFoundDialog}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Claim This Item</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="w-5 h-5 text-orange-600" />
+              I Found This Item
+            </DialogTitle>
             <DialogDescription>
-              Please provide details explaining why this item belongs to you.
+              Let the owner know you found their item. They will be notified immediately.
             </DialogDescription>
           </DialogHeader>
+          
           <div className="space-y-4 py-4">
+            {/* Message */}
             <div className="space-y-2">
-              <Label htmlFor="claimDetails">Claim Details *</Label>
+              <Label htmlFor="foundMessage">Where/How did you find it? *</Label>
               <Textarea
-                id="claimDetails"
-                placeholder="Describe the item, where you lost it, unique features, etc."
-                value={claimDetails}
-                onChange={(e) => setClaimDetails(e.target.value)}
-                rows={4}
-                data-testid="claim-details-input"
+                id="foundMessage"
+                placeholder="e.g., Found near library entrance, Found in cafeteria..."
+                value={foundMessage}
+                onChange={(e) => setFoundMessage(e.target.value)}
+                rows={3}
               />
-              <p className="text-xs text-slate-500">
-                Provide specific details to help verify your claim
-              </p>
+            </div>
+
+            {/* Optional Image Upload */}
+            <div className="space-y-2">
+              <Label>Photo (Optional)</Label>
+              {foundImagePreview ? (
+                <div className="relative">
+                  <img 
+                    src={foundImagePreview} 
+                    alt="Preview" 
+                    className="w-full h-32 object-cover rounded-lg border"
+                  />
+                  <button
+                    type="button"
+                    onClick={clearFoundImage}
+                    className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                  <Upload className="w-6 h-6 text-slate-400 mb-1" />
+                  <span className="text-xs text-slate-500">Click to upload image</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFoundImageChange}
+                    className="hidden"
+                  />
+                </label>
+              )}
             </div>
           </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setShowClaimDialog(false)}>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowFoundDialog(false)}>
               Cancel
             </Button>
             <Button 
-              onClick={handleClaim} 
-              disabled={!claimDetails.trim() || claiming}
-              className="bg-emerald-600 hover:bg-emerald-700"
-              data-testid="confirm-claim-btn"
+              onClick={handleFoundSubmit} 
+              disabled={!foundMessage.trim() || submitting}
+              className="bg-orange-600 hover:bg-orange-700"
             >
-              {claiming ? 'Submitting...' : 'Submit Claim'}
+              {submitting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Notify Owner
+                </>
+              )}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
   );
 };
 
+/**
+ * ItemGrid Component
+ * Displays items in a responsive grid - latest items first
+ */
 export const ItemGrid = ({ items, ...props }) => {
   if (!items?.length) {
     return (
@@ -299,9 +485,16 @@ export const ItemGrid = ({ items, ...props }) => {
     );
   }
 
+  // Sort by created_at descending (latest first)
+  const sortedItems = [...items].sort((a, b) => {
+    const dateA = new Date(a.created_at || a.created_date || 0);
+    const dateB = new Date(b.created_at || b.created_date || 0);
+    return dateB - dateA;
+  });
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {items.map((item) => (
+    <div className="item-grid" data-testid="item-grid">
+      {sortedItems.map((item) => (
         <ItemCard key={item.id} item={item} {...props} />
       ))}
     </div>
