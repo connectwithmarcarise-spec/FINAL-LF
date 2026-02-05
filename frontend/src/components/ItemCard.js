@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { MapPin, Calendar, Clock, Eye, Trash2, Hand, AlertCircle, Package } from 'lucide-react';
+import { MapPin, Calendar, Clock, Eye, Trash2, Hand, AlertCircle, Package, ImageOff } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import {
@@ -15,6 +15,19 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
 import { claimsAPI } from '../services/api';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+
+/**
+ * No Image Placeholder Component
+ * Shows "NO IMAGE ATTACHED" when item has no image
+ */
+const NoImagePlaceholder = ({ className = '' }) => (
+  <div className={`bg-slate-100 flex flex-col items-center justify-center ${className}`}>
+    <ImageOff className="w-12 h-12 text-slate-300 mb-2" />
+    <p className="text-sm font-medium text-slate-400 text-center px-4">NO IMAGE ATTACHED</p>
+  </div>
+);
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
