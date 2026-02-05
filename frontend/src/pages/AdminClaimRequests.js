@@ -61,7 +61,7 @@ const ConfidenceBadge = memo(({ band, percentage }) => {
 // Compact Claim Row - Single line for list view
 const ClaimRow = memo(({ claim, onClick }) => {
   const isAIPowered = claim.claim_type === 'ai_powered';
-  const confidenceBand = claim.ai_analysis?.confidence_band || 'LOW';
+  const matchPercentage = claim.match_percentage || claim.ai_analysis?.internal_score || 0;
   
   return (
     <div 
@@ -76,8 +76,8 @@ const ClaimRow = memo(({ claim, onClick }) => {
         'bg-amber-500'
       }`} />
       
-      {/* Main Info - Compact Single Line */}
-      <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+      {/* Main Info */}
+      <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
         {/* Claimant Name */}
         <div className="flex items-center gap-2 min-w-0">
           <User className="w-4 h-4 text-slate-400 flex-shrink-0" />
@@ -86,16 +86,17 @@ const ClaimRow = memo(({ claim, onClick }) => {
           </span>
         </div>
         
-        {/* Item Name */}
-        <div className="flex items-center gap-2 min-w-0">
-          <Package className="w-4 h-4 text-slate-400 flex-shrink-0" />
-          <span className="text-slate-600 truncate text-sm">
-            {claim.item?.item_keyword || claim.item?.description?.slice(0, 30) || 'Item'}
-          </span>
-        </div>
+        {/* Claim Summary - Clean one line */}
+        <span className="text-xs sm:text-sm text-slate-600">
+          Claim request received – <span className={`font-semibold ${
+            matchPercentage >= 70 ? 'text-green-600' :
+            matchPercentage >= 40 ? 'text-yellow-600' :
+            'text-orange-600'
+          }`}>{matchPercentage}% match</span>
+        </span>
         
         {/* Timestamp - Hidden on mobile */}
-        <span className="hidden md:block text-xs text-slate-400 flex-shrink-0">
+        <span className="hidden lg:block text-xs text-slate-400 flex-shrink-0">
           {format(new Date(claim.created_at), 'MMM d, h:mm a')}
         </span>
       </div>
