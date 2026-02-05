@@ -29,8 +29,6 @@ const NoImagePlaceholder = ({ className = '' }) => (
   </div>
 );
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
 export const ItemCard = ({ 
   item, 
   showActions = false,
