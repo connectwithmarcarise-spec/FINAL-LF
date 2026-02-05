@@ -1735,6 +1735,20 @@ Return the JSON analysis."""
             "What was in the item if it's a bag/wallet?"
         ]
     
+    # Parse QA data if provided
+    parsed_qa_data = []
+    try:
+        parsed_qa_data = json.loads(qa_data)
+    except:
+        pass
+    
+    # Parse match percentage
+    parsed_match_percentage = 0
+    try:
+        parsed_match_percentage = int(float(match_percentage))
+    except:
+        pass
+
     # Create claim with AI advisory analysis
     claim = {
         "id": str(uuid.uuid4()),
@@ -1745,6 +1759,8 @@ Return the JSON analysis."""
         "proof_image_url": proof_image_url,
         "ai_analysis": ai_analysis,
         "ai_internal_score": internal_score,  # Hidden from students, visible to admins
+        "match_percentage": parsed_match_percentage,  # Frontend calculated match
+        "qa_data": parsed_qa_data,  # Questions and answers from chatbot
         "verification_questions": verification_questions,
         "verification_answers": [],
         "status": "pending",
