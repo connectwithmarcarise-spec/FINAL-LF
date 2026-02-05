@@ -1232,6 +1232,104 @@ async def get_found_responses(item_id: str, current_user: dict = Depends(get_cur
 
 # ===================== CLAIMS (ONLY for FOUND items - ownership verification) =====================
 
+class GenerateQuestionsRequest(BaseModel):
+    item_keyword: str
+    description: str
+    location: str = ""
+    secret_message: str = ""
+
+@api_router.post("/claims/generate-questions")
+async def generate_claim_questions(
+    data: GenerateQuestionsRequest,
+    current_user: dict = Depends(require_student)
+):
+    """
+    Generate dynamic verification questions based on item and secret message.
+    Uses AI when available, falls back to smart templates.
+    Questions can be in English or Tanglish (Tamil + English mix).
+    """
+    item_keyword = data.item_keyword or "item"
+    description = data.description or ""
+    location = data.location or ""
+    secret_message = data.secret_message or ""
+    
+    questions = []
+    
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        
+        api_key = os.environ.get("EMERGENT_LLM_KEY")
+        if api_key:
+            chat = LlmChat(
+                api_key=api_key,
+                session_id=f"questions_{datetime.now().timestamp()}",
+                system_message="""You are a verification assistant for a college Lost & Found system.
+                Generate exactly 3 unique verification questions in a friendly, conversational tone.
+                Questions can be in English or Tanglish (Tamil + English mix) to feel natural to Indian students.
+                Questions should verify if the person truly owns the item based on:
+                1. Item details and description
+                2. Secret proof message (hints about unique features)
+                3. Loss circumstances
+                
+                Each question should be different and specific. Avoid generic questions.
+                Return ONLY a JSON array with 3 strings, no explanation."""
+            )
+            
+            prompt = f"""Generate 3 verification questions for someone claiming this found item:
+            
+Item: {item_keyword}
+Description: {description}
+Found at: {location}
+Secret proof hints: {secret_message}
+
+Questions should test if they truly own it. Be creative and specific.
+Return ONLY a JSON array like: ["Question 1?", "Question 2?", "Question 3?"]"""
+            
+            response = chat.send_user_message(UserMessage(content=prompt))
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            
+            import re
+            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if json_match:
+                ai_questions = json.loads(json_match.group())
+                if len(ai_questions) >= 3:
+                    questions = ai_questions[:3]
+                    return {"questions": questions, "source": "ai"}
+    
+    except Exception as e:
+        logging.warning(f"AI question generation failed: {str(e)}")
+    
+    # Smart fallback - generate based on available info
+    # Question 1: Description-based
+    if len(description) > 20:
+        desc_preview = description[:40] + "..."
+        questions.append(
+            f"This {item_keyword} was described as '{desc_preview}'. Can you tell me the exact color, brand, or model?"
+        )
+    else:
+        questions.append(
+            f"Describe this {item_keyword} in detail - color, brand, model, any scratches or marks?"
+        )
+    
+    # Question 2: Secret message-based
+    secret_lower = secret_message.lower() if secret_message else ""
+    if "scratch" in secret_lower or "mark" in secret_lower:
+        questions.append("The finder mentioned some marks on this item. Where exactly are these marks located?")
+    elif "sticker" in secret_lower or "cover" in secret_lower:
+        questions.append("What stickers, case, or cover does this item have? Describe them.")
+    elif "name" in secret_lower or "written" in secret_lower:
+        questions.append("Is there any name or writing on this item? What does it say and where?")
+    else:
+        questions.append(f"What unique feature or personal mark on this {item_keyword} proves it's yours?")
+    
+    # Question 3: Location/timing
+    if location:
+        questions.append(f"This was found at {location}. When and where did you last have this {item_keyword}?")
+    else:
+        questions.append(f"When did you lose this {item_keyword}? Where were you and what were you doing?")
+    
+    return {"questions": questions, "source": "fallback"}
+
 @api_router.post("/claims")
 async def create_claim(data: ClaimRequest, current_user: dict = Depends(require_student)):
     """
