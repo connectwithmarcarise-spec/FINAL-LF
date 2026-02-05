@@ -1,209 +1,190 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Textarea } from '../components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { toast } from 'sonner';
-import { Bot, Send, Upload, ArrowLeft, Sparkles, AlertTriangle, Package, MapPin, Clock } from 'lucide-react';
+import { Bot, Send, ArrowLeft, Sparkles, AlertTriangle, Package, MapPin, Clock, User, ImageOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { format } from 'date-fns';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-const steps = [
-  {
-    id: 'product_type',
-    question: '🏷️ What type of product is it?',
-    placeholder: 'e.g., Phone, Laptop, Wallet, Keys, etc.',
-    type: 'text'
-  },
-  {
-    id: 'description',
-    question: '📝 Can you describe the item in detail?',
-    placeholder: 'Color, brand, model, size, any specific features...',
-    type: 'textarea'
-  },
-  {
-    id: 'identification_marks',
-    question: '🔍 What unique identification marks does it have?',
-    placeholder: 'Scratches, stickers, custom case, serial number, etc.',
-    type: 'textarea'
-  },
-  {
-    id: 'lost_location',
-    question: '📍 Where did you lose it?',
-    placeholder: 'Library 2nd Floor, Cafeteria, Parking Lot B, etc.',
-    type: 'text'
-  },
-  {
-    id: 'approximate_date',
-    question: '📅 When did you lose it (approximately)?',
-    placeholder: 'Today, Yesterday, Last Week, 3 days ago, etc.',
-    type: 'text'
-  },
-  {
-    id: 'proof_image',
-    question: '📸 Do you have any proof of ownership? (Optional)',
-    placeholder: 'Upload a photo',
-    type: 'file'
+/**
+ * Safe string formatter
+ */
+const safeString = (value) => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (value instanceof Date) return format(value, 'MMM d, yyyy');
+  if (typeof value === 'object') {
+    if (value.$date) return format(new Date(value.$date), 'MMM d, yyyy');
+    return JSON.stringify(value);
   }
-];
+  return String(value);
+};
 
 /**
- * AIClaimChat - AI-powered claim submission for FOUND items only
+ * AIClaimChat - AI Chatbot for FOUND item claims
  * 
- * BUG FIX: Now properly extracts itemId from useParams() instead of expecting it as a prop
+ * Flow:
+ * 1. Validates item exists and is FOUND type
+ * 2. Asks exactly 3 verification questions
+ * 3. Submits answers to admin panel for review
  */
 const AIClaimChat = () => {
   const navigate = useNavigate();
-  const { itemId } = useParams();  // FIX: Extract itemId from URL params
-  const { token } = useAuth();
+  const { itemId } = useParams();
+  const { token, user } = useAuth();
+  const chatEndRef = useRef(null);
   
-  const [currentStep, setCurrentStep] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const [proofImage, setProofImage] = useState(null);
-  const [noProofChecked, setNoProofChecked] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [aiResult, setAiResult] = useState(null);
-  
-  // NEW: Item state for validation
   const [item, setItem] = useState(null);
   const [itemLoading, setItemLoading] = useState(true);
   const [itemError, setItemError] = useState(null);
+  
+  const [messages, setMessages] = useState([]);
+  const [currentInput, setCurrentInput] = useState('');
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [aiResult, setAiResult] = useState(null);
 
-  // FIX: Validate item exists and is claimable on mount
+  // 3 verification questions based on item
+  const getQuestions = (itemData) => [
+    {
+      id: 'describe_item',
+      question: `Can you describe this ${safeString(itemData?.item_keyword || 'item')} in detail? (color, brand, model, distinguishing features)`,
+      botMessage: `Hello! I'll help verify your claim for this ${safeString(itemData?.item_keyword || 'item')}. Let's start with some verification questions.\n\n**Question 1 of 3:**\nCan you describe this item in detail? Include color, brand, model, and any distinguishing features.`
+    },
+    {
+      id: 'prove_ownership',
+      question: 'What proof can you provide that this item belongs to you?',
+      botMessage: `**Question 2 of 3:**\nWhat proof can you provide that this item belongs to you? (e.g., purchase receipt, serial number, photos of you with the item, unique marks only you would know)`
+    },
+    {
+      id: 'loss_details',
+      question: 'Where and when did you lose this item?',
+      botMessage: `**Question 3 of 3:**\nWhere and approximately when did you lose this item? Please be as specific as possible about the location and date/time.`
+    }
+  ];
+
+  // Scroll to bottom of chat
   useEffect(() => {
-    const validateItem = async () => {
-      // Check if itemId is present
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Load and validate item
+  useEffect(() => {
+    const loadItem = async () => {
       if (!itemId) {
-        setItemError('No item ID provided. Please select an item from the lobby.');
+        setItemError('No item ID provided. Please select an item to claim.');
         setItemLoading(false);
         return;
       }
 
       try {
-        setItemLoading(true);
-        // Fetch item details to validate it exists and is claimable
-        const response = await axios.get(`${BACKEND_URL}/api/lobby/items`, {
+        const response = await axios.get(`${BACKEND_URL}/api/items/public`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         
         const foundItem = response.data.find(i => i.id === itemId);
         
         if (!foundItem) {
-          setItemError('Item not found. It may have been deleted, returned, or archived.');
+          setItemError('Item not found. It may have been deleted or claimed.');
           setItemLoading(false);
           return;
         }
-        
-        // SEMANTIC CHECK: Only FOUND items can be claimed
+
         if (foundItem.item_type !== 'found') {
-          setItemError('This is a LOST item. You cannot claim it. Use "I Found This" instead.');
+          setItemError('This is a LOST item. You cannot claim it. Use "I Found This Item" instead.');
           setItemLoading(false);
           return;
         }
-        
-        // Check item status - can't claim if already claimed/returned/archived
-        if (foundItem.status === 'claimed' || foundItem.status === 'returned' || foundItem.status === 'archived') {
-          setItemError(`This item is already ${foundItem.status}. It cannot be claimed.`);
+
+        if (foundItem.status === 'claimed' || foundItem.status === 'returned') {
+          setItemError(`This item is already ${foundItem.status}.`);
           setItemLoading(false);
           return;
         }
-        
+
+        // Check if user is the owner
+        if (foundItem.is_owner || foundItem.student_id === user?.id) {
+          setItemError('You cannot claim your own item.');
+          setItemLoading(false);
+          return;
+        }
+
         setItem(foundItem);
-        setItemError(null);
+        
+        // Start chat with first question
+        const questions = getQuestions(foundItem);
+        setMessages([
+          { type: 'bot', content: questions[0].botMessage }
+        ]);
+        
       } catch (error) {
-        console.error('Failed to validate item:', error);
-        if (error.response?.status === 401) {
-          setItemError('Session expired. Please login again.');
-        } else {
-          setItemError('Failed to load item details. Please try again.');
-        }
+        console.error('Failed to load item:', error);
+        setItemError('Failed to load item details. Please try again.');
       } finally {
         setItemLoading(false);
       }
     };
 
     if (token) {
-      validateItem();
+      loadItem();
     }
-  }, [itemId, token]);
+  }, [itemId, token, user]);
 
-  const currentQuestion = steps[currentStep];
+  const handleSendMessage = () => {
+    if (!currentInput.trim() || !item) return;
 
-  const handleNext = () => {
-    if (!answers[currentQuestion.id] && currentQuestion.type !== 'file') {
-      toast.error('Please answer the question before proceeding');
-      return;
-    }
+    const questions = getQuestions(item);
+    const answer = currentInput.trim();
     
-    // Special validation for proof image step
-    if (currentQuestion.type === 'file' && !proofImage && !noProofChecked) {
-      toast.error('Please upload a proof image or check "I don\'t have any proof image"');
-      return;
-    }
+    // Add user message
+    setMessages(prev => [...prev, { type: 'user', content: answer }]);
     
-    if (currentStep < steps.length - 1) {
-      setCurrentStep(currentStep + 1);
+    // Store answer
+    const questionId = questions[currentQuestion].id;
+    setAnswers(prev => ({ ...prev, [questionId]: answer }));
+    
+    setCurrentInput('');
+
+    // Move to next question or submit
+    if (currentQuestion < questions.length - 1) {
+      setTimeout(() => {
+        setMessages(prev => [...prev, { 
+          type: 'bot', 
+          content: questions[currentQuestion + 1].botMessage 
+        }]);
+        setCurrentQuestion(prev => prev + 1);
+      }, 500);
     } else {
-      handleSubmit();
+      // All questions answered - submit claim
+      handleSubmitClaim({ ...answers, [questionId]: answer });
     }
   };
 
-  const handleBack = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
-    }
-  };
+  const handleSubmitClaim = async (finalAnswers) => {
+    setSubmitting(true);
+    
+    setMessages(prev => [...prev, { 
+      type: 'bot', 
+      content: '⏳ Processing your claim and verifying with AI... Please wait.' 
+    }]);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Image size should be less than 5MB');
-        return;
-      }
-      setProofImage(file);
-      setAnswers({...answers, proof_image: 'uploaded'});
-    }
-  };
-
-  const handleSubmit = async () => {
-    // FIX: Pre-submission validation
-    if (!itemId) {
-      toast.error('No item ID. Please go back and select an item.');
-      return;
-    }
-    
-    if (!item) {
-      toast.error('Item data not loaded. Please refresh and try again.');
-      return;
-    }
-    
-    if (item.item_type !== 'found') {
-      toast.error('This is a LOST item. Claims are only for FOUND items.');
-      navigate('/lobby');
-      return;
-    }
-    
-    setLoading(true);
     try {
       const formData = new FormData();
-      
-      // FIX: Explicit item_id validation before appending
-      console.log('Submitting claim for item_id:', itemId);  // Debug log
       formData.append('item_id', itemId);
-      formData.append('product_type', answers.product_type);
-      formData.append('description', answers.description);
-      formData.append('identification_marks', answers.identification_marks);
-      formData.append('lost_location', answers.lost_location);
-      formData.append('approximate_date', answers.approximate_date);
-      
-      if (proofImage) {
-        formData.append('proof_image', proofImage);
-      }
+      formData.append('product_type', safeString(item?.item_keyword) || 'Unknown');
+      formData.append('description', finalAnswers.describe_item || '');
+      formData.append('identification_marks', finalAnswers.prove_ownership || '');
+      formData.append('lost_location', finalAnswers.loss_details?.split(' ')[0] || '');
+      formData.append('approximate_date', 'Recently');
 
       const response = await axios.post(`${BACKEND_URL}/api/claims/ai-powered`, formData, {
         headers: {
@@ -213,33 +194,46 @@ const AIClaimChat = () => {
       });
 
       setAiResult(response.data.ai_analysis);
-      toast.success('Claim submitted successfully!');
+      setSubmitted(true);
       
-      // Show AI result before navigating
-      setTimeout(() => {
-        navigate('/student/my-items');
-      }, 5000);
+      setMessages(prev => [...prev, { 
+        type: 'bot', 
+        content: `✅ **Claim Submitted Successfully!**\n\nYour claim has been sent to the Admin for review. The AI analysis shows a **${response.data.ai_analysis?.confidence_band || 'PENDING'}** confidence level.\n\nYou will be notified once the admin makes a decision.`,
+        isSuccess: true
+      }]);
+
+      toast.success('Claim submitted for admin review!');
+      
     } catch (error) {
       console.error('Claim submission error:', error);
-      const message = error.response?.data?.detail || 'Failed to submit claim';
-      toast.error(message);
+      const errorMsg = error.response?.data?.detail || 'Failed to submit claim';
       
-      // If item not found, redirect back
-      if (error.response?.status === 404) {
-        setTimeout(() => navigate('/lobby'), 2000);
-      }
+      setMessages(prev => [...prev, { 
+        type: 'bot', 
+        content: `❌ **Error:** ${safeString(errorMsg)}\n\nPlease try again or contact support.`,
+        isError: true
+      }]);
+      
+      toast.error(safeString(errorMsg));
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  // FIX: Show loading state while validating item
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  // Loading state
   if (itemLoading) {
     return (
-      <div className="max-w-2xl mx-auto py-12">
+      <div className="max-w-2xl mx-auto py-12 px-4">
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
-            <div className="spinner mb-4" />
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mb-4" />
             <p className="text-slate-600">Loading item details...</p>
           </CardContent>
         </Card>
@@ -247,10 +241,10 @@ const AIClaimChat = () => {
     );
   }
 
-  // FIX: Show error state if item is invalid/unavailable
+  // Error state
   if (itemError) {
     return (
-      <div className="max-w-2xl mx-auto py-12">
+      <div className="max-w-2xl mx-auto py-12 px-4">
         <Card className="border-red-200 bg-red-50">
           <CardContent className="py-8">
             <div className="flex flex-col items-center text-center">
@@ -259,9 +253,9 @@ const AIClaimChat = () => {
               </div>
               <h3 className="text-lg font-semibold text-red-800 mb-2">Cannot Submit Claim</h3>
               <p className="text-red-600 mb-6">{itemError}</p>
-              <Button onClick={() => navigate('/lobby')} variant="outline">
+              <Button onClick={() => navigate('/student/found-items')} variant="outline">
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Lobby
+                Back to Found Items
               </Button>
             </div>
           </CardContent>
@@ -270,203 +264,51 @@ const AIClaimChat = () => {
     );
   }
 
-  if (aiResult) {
-    // Get confidence band display
-    const getConfidenceBandDisplay = () => {
-      const band = (aiResult.confidence_band || 'INSUFFICIENT').toUpperCase();
-      switch (band) {
-        case 'HIGH':
-          return { color: 'text-green-600 bg-green-100', label: 'HIGH', icon: '✅', description: 'Strong evidence alignment' };
-        case 'MEDIUM':
-          return { color: 'text-amber-600 bg-amber-100', label: 'MEDIUM', icon: '⚠️', description: 'Some alignment, needs verification' };
-        case 'LOW':
-          return { color: 'text-red-600 bg-red-100', label: 'LOW', icon: '❌', description: 'Weak evidence or mismatches' };
-        case 'INSUFFICIENT':
-        default:
-          return { color: 'text-slate-600 bg-slate-100', label: 'INSUFFICIENT', icon: '❓', description: 'Not enough information to assess' };
-      }
-    };
-    
-    const confidenceDisplay = getConfidenceBandDisplay();
-    
-    return (
-      <Card className="max-w-2xl mx-auto">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-              <Sparkles className="w-6 h-6 text-purple-600" />
-            </div>
-            <div>
-              <CardTitle>Claim Submitted for Review</CardTitle>
-              <p className="text-sm text-slate-600 mt-1">AI analysis is advisory only</p>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Confidence Band Display */}
-          <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg p-6">
-            <div className="text-center mb-4">
-              <div className={`inline-flex items-center gap-2 px-6 py-3 rounded-full text-2xl font-bold ${confidenceDisplay.color}`}>
-                <span>{confidenceDisplay.icon}</span>
-                <span>{confidenceDisplay.label} CONFIDENCE</span>
-              </div>
-              <p className="text-sm text-slate-500 mt-2">
-                {confidenceDisplay.description}
-              </p>
-            </div>
-            
-            <div className="bg-white rounded-lg p-4 space-y-4">
-              {/* AI Reasoning */}
-              <div>
-                <p className="text-sm font-semibold text-slate-700 mb-2">AI Advisory Notes:</p>
-                <p className="text-sm text-slate-600">{aiResult.reasoning}</p>
-              </div>
-              
-              {/* What Matched */}
-              {aiResult.what_matched && aiResult.what_matched.length > 0 && (
-                <div className="border-t pt-3">
-                  <p className="text-sm font-semibold text-green-700 mb-2">✅ What Matched:</p>
-                  <ul className="list-disc list-inside text-sm text-green-600 space-y-1">
-                    {aiResult.what_matched.map((item, i) => (
-                      <li key={i}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              
-              {/* What Partially Matched */}
-              {aiResult.what_partially_matched && aiResult.what_partially_matched.length > 0 && (
-                <div className="border-t pt-3">
-                  <p className="text-sm font-semibold text-amber-700 mb-2">⚡ Partial Matches:</p>
-                  <ul className="list-disc list-inside text-sm text-amber-600 space-y-1">
-                    {aiResult.what_partially_matched.map((item, i) => (
-                      <li key={i}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              
-              {/* What Did Not Match */}
-              {aiResult.what_did_not_match && aiResult.what_did_not_match.length > 0 && (
-                <div className="border-t pt-3">
-                  <p className="text-sm font-semibold text-red-700 mb-2">❌ Did Not Match:</p>
-                  <ul className="list-disc list-inside text-sm text-red-600 space-y-1">
-                    {aiResult.what_did_not_match.map((item, i) => (
-                      <li key={i}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              
-              {/* Missing Information */}
-              {aiResult.missing_information && aiResult.missing_information.length > 0 && (
-                <div className="border-t pt-3">
-                  <p className="text-sm font-semibold text-slate-700 mb-2">📋 Missing Information:</p>
-                  <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-                    {aiResult.missing_information.map((item, i) => (
-                      <li key={i}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              
-              {/* Inconsistencies */}
-              {aiResult.inconsistencies && aiResult.inconsistencies.length > 0 && (
-                <div className="border-t pt-3">
-                  <p className="text-sm font-semibold text-amber-700 mb-2">⚠️ Detected Inconsistencies:</p>
-                  <ul className="list-disc list-inside text-sm text-amber-600 space-y-1">
-                    {aiResult.inconsistencies.map((issue, i) => (
-                      <li key={i}>{issue}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              
-              {/* Input Quality Flags */}
-              {aiResult.input_quality_flags && aiResult.input_quality_flags.length > 0 && (
-                <div className="border-t pt-3">
-                  <p className="text-sm font-semibold text-slate-500 mb-2">📝 Input Quality Notes:</p>
-                  <ul className="list-disc list-inside text-xs text-slate-500 space-y-1">
-                    {aiResult.input_quality_flags.map((flag, i) => (
-                      <li key={i}>{flag}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Important disclaimer */}
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <p className="text-sm text-amber-800 font-medium mb-2">
-              ⚠️ Important: AI Does NOT Make Decisions
-            </p>
-            <p className="text-xs text-amber-700">
-              The AI analysis is for advisory purposes only. An admin will review your claim 
-              and make the final decision. The confidence band helps guide, but does not 
-              determine, the outcome of your claim.
-            </p>
-          </div>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800">
-              <strong>What happens next?</strong><br />
-              Your claim has been submitted to the admin team. They will review the AI analysis and your details before making a decision. You will be notified once they respond.
-            </p>
-          </div>
-
-          <Button onClick={() => navigate('/student/my-items')} className="w-full">
-            Go to My Items
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
-    <div className="max-w-2xl mx-auto animate-fade-in">
-      <button 
-        onClick={() => navigate(-1)}
-        className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back
-      </button>
+    <div className="max-w-2xl mx-auto py-6 px-4">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-6">
+        <Button variant="ghost" size="sm" onClick={() => navigate('/student/found-items')}>
+          <ArrowLeft className="w-4 h-4" />
+        </Button>
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-purple-600" />
+          </div>
+          <div>
+            <h1 className="font-semibold text-slate-900">AI Claim Verification</h1>
+            <p className="text-xs text-slate-500">Answer 3 questions to submit your claim</p>
+          </div>
+        </div>
+      </div>
 
-      {/* FIX: Show item being claimed for context */}
+      {/* Item Preview Card */}
       {item && (
-        <Card className="mb-4 border-blue-200 bg-blue-50/50">
-          <CardContent className="py-4">
-            <p className="text-xs font-medium text-blue-600 mb-2">Claiming This Item:</p>
-            <div className="flex items-start gap-3">
+        <Card className="mb-4 border-purple-200 bg-purple-50/50">
+          <CardContent className="p-4">
+            <div className="flex gap-4">
               {item.image_url ? (
                 <img 
-                  src={`${BACKEND_URL}${item.image_url}`} 
-                  alt="" 
-                  className="w-16 h-16 rounded-lg object-cover"
+                  src={`${BACKEND_URL}${item.image_url}`}
+                  alt="Item"
+                  className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
+                  onError={(e) => { e.target.style.display = 'none'; }}
                 />
               ) : (
-                <div className="w-16 h-16 bg-slate-200 rounded-lg flex items-center justify-center">
-                  <Package className="w-6 h-6 text-slate-400" />
+                <div className="w-20 h-20 bg-slate-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <ImageOff className="w-8 h-8 text-slate-400" />
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <Badge className="bg-emerald-500 text-xs">Found Item</Badge>
-                  <span className="text-xs text-slate-500">{item.item_keyword}</span>
-                </div>
-                <p className="text-sm text-slate-700 line-clamp-2">{item.description}</p>
-                <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                <Badge className="status-found mb-2">FOUND ITEM</Badge>
+                <p className="text-sm font-medium text-slate-800 line-clamp-2">
+                  {safeString(item.description)}
+                </p>
+                <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
                   <span className="flex items-center gap-1">
                     <MapPin className="w-3 h-3" />
-                    {item.location}
+                    {safeString(item.location)}
                   </span>
-                  {item.approximate_time && (
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {item.approximate_time}
-                    </span>
-                  )}
                 </div>
               </div>
             </div>
@@ -474,161 +316,79 @@ const AIClaimChat = () => {
         </Card>
       )}
 
+      {/* Chat Interface */}
       <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center animate-pulse">
-              <Bot className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <CardTitle className="font-outfit">AI Student Care Assistant</CardTitle>
-              <p className="text-sm text-slate-600 mt-1">
-                Answer step-by-step questions to claim this item
-              </p>
-            </div>
-          </div>
-        </CardHeader>
-        
-        <CardContent className="space-y-6">
-          {/* Progress Bar */}
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm text-slate-600">
-              <span>Step {currentStep + 1} of {steps.length}</span>
-              <span>{Math.round(((currentStep + 1) / steps.length) * 100)}%</span>
-            </div>
-            <div className="w-full bg-slate-200 rounded-full h-2">
+        <CardContent className="p-0">
+          {/* Messages */}
+          <div className="h-96 overflow-y-auto p-4 space-y-4">
+            {messages.map((msg, idx) => (
               <div 
-                className="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Chat Bubble - Question */}
-          <div className="flex gap-3">
-            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-              <Bot className="w-5 h-5 text-purple-600" />
-            </div>
-            <div className="bg-slate-100 rounded-2xl rounded-tl-none p-4 flex-1">
-              <p className="text-slate-800 font-medium">{currentQuestion.question}</p>
-            </div>
-          </div>
-
-          {/* Answer Input */}
-          <div className="space-y-3">
-            {currentQuestion.type === 'text' && (
-              <Input
-                placeholder={currentQuestion.placeholder}
-                value={answers[currentQuestion.id] || ''}
-                onChange={(e) => setAnswers({...answers, [currentQuestion.id]: e.target.value})}
-                autoFocus
-                onKeyPress={(e) => e.key === 'Enter' && handleNext()}
-              />
-            )}
-
-            {currentQuestion.type === 'textarea' && (
-              <Textarea
-                placeholder={currentQuestion.placeholder}
-                value={answers[currentQuestion.id] || ''}
-                onChange={(e) => setAnswers({...answers, [currentQuestion.id]: e.target.value})}
-                rows={4}
-                autoFocus
-              />
-            )}
-
-            {currentQuestion.type === 'file' && (
-              <div className="space-y-3">
-                <div 
-                  className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition ${
-                    noProofChecked ? 'border-slate-200 bg-slate-50 opacity-50 cursor-not-allowed' : 'border-slate-300 hover:border-purple-400'
-                  }`}
-                  onClick={() => !noProofChecked && document.getElementById('proof-upload').click()}
-                >
-                  {proofImage ? (
-                    <div>
-                      <Upload className="w-8 h-8 mx-auto text-green-600 mb-2" />
-                      <p className="text-sm text-green-600 font-medium">{proofImage.name}</p>
-                      <p className="text-xs text-slate-500 mt-1">Click to change</p>
-                    </div>
-                  ) : (
-                    <div>
-                      <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
-                      <p className="text-sm text-slate-600">Click to upload proof (optional)</p>
-                      <p className="text-xs text-slate-500 mt-1">PNG, JPG up to 5MB</p>
+                key={idx} 
+                className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className={`max-w-[85%] rounded-lg p-3 ${
+                  msg.type === 'user' 
+                    ? 'bg-purple-600 text-white' 
+                    : msg.isError 
+                      ? 'bg-red-50 border border-red-200 text-red-800'
+                      : msg.isSuccess
+                        ? 'bg-green-50 border border-green-200 text-green-800'
+                        : 'bg-slate-100 text-slate-800'
+                }`}>
+                  {msg.type === 'bot' && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <Bot className="w-4 h-4 text-purple-600" />
+                      <span className="text-xs font-medium text-purple-600">AI Assistant</span>
                     </div>
                   )}
-                </div>
-                <input
-                  id="proof-upload"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                  disabled={noProofChecked}
-                />
-                
-                {/* No Proof Checkbox - Highlighted */}
-                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={noProofChecked}
-                      onChange={(e) => {
-                        setNoProofChecked(e.target.checked);
-                        if (e.target.checked) {
-                          setProofImage(null);
-                          setAnswers({...answers, proof_image: 'no_proof'});
-                        } else {
-                          const newAnswers = {...answers};
-                          delete newAnswers.proof_image;
-                          setAnswers(newAnswers);
-                        }
-                      }}
-                      className="w-5 h-5 text-yellow-600 border-yellow-400 rounded focus:ring-yellow-500"
-                    />
-                    <span className="text-sm font-semibold text-yellow-900">
-                      ⚠️ I don't have any proof image
-                    </span>
-                  </label>
-                  <p className="text-xs text-yellow-700 mt-2 ml-8">
-                    Check this if you don't have any photo as proof
-                  </p>
+                  <div className="text-sm whitespace-pre-wrap">{msg.content}</div>
                 </div>
               </div>
-            )}
+            ))}
+            <div ref={chatEndRef} />
           </div>
 
-          {/* Navigation Buttons */}
-          <div className="flex gap-3 pt-4">
-            {currentStep > 0 && (
-              <Button
-                onClick={handleBack}
-                variant="outline"
-                className="flex-1"
+          {/* Input Area */}
+          {!submitted && (
+            <div className="border-t p-4">
+              <div className="flex gap-2">
+                <Input
+                  value={currentInput}
+                  onChange={(e) => setCurrentInput(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Type your answer..."
+                  disabled={submitting}
+                  className="flex-1"
+                />
+                <Button 
+                  onClick={handleSendMessage}
+                  disabled={!currentInput.trim() || submitting}
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  {submitting ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-slate-400 mt-2">
+                Question {currentQuestion + 1} of 3
+              </p>
+            </div>
+          )}
+
+          {/* Done - Go back button */}
+          {submitted && (
+            <div className="border-t p-4">
+              <Button 
+                onClick={() => navigate('/student/my-items')}
+                className="w-full bg-emerald-600 hover:bg-emerald-700"
               >
-                Back
+                View My Claims
               </Button>
-            )}
-            <Button
-              onClick={handleNext}
-              disabled={loading}
-              className="flex-1 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600"
-            >
-              {loading ? (
-                'Processing...'
-              ) : currentStep === steps.length - 1 ? (
-                <>
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Submit for AI Analysis
-                </>
-              ) : (
-                <>
-                  Next
-                  <Send className="w-4 h-4 ml-2" />
-                </>
-              )}
-            </Button>
-          </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
